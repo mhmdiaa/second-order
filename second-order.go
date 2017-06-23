@@ -15,6 +15,8 @@ type Job struct {
     depth int
 }
 
+var output = make(map[string][]string)
+
 func dedup(ch chan Job, wg *sync.WaitGroup) {
     seen := make(map[string]bool)
     for job := range ch {
@@ -35,6 +37,22 @@ func Crawl(job Job, q chan Job, wg *sync.WaitGroup) {
     if err != nil {
       log.Fatal(err)
     }
+    var resources []string
+
+    scripts := attrScrape("script", "src", doc)
+    iframes := attrScrape("iframe", "src", doc)
+    svgs := attrScrape("svg", "src", doc)
+    objects := attrScrape("object", "src", doc)
+
+    resources = append(resources, canTakeover(scripts)...)
+    resources = append(resources, canTakeover(iframes)...)
+    resources = append(resources, canTakeover(svgs)...)
+    resources = append(resources, canTakeover(objects)...)
+
+    if len(resources) > 0 {
+      output["url"] = resources
+    }
+
     urls := attrScrape("a", "href", doc)
     tovisit := toVisit(urls, job.url)
 
@@ -100,6 +118,30 @@ func toVisit(urls []string, base string) []string{
     }
     return tovisit
 }
+
+func canTakeoverLink(link string) bool {
+  // TODO: Check if the subdomains are not connected to an account
+  providers := []string{"s3.amazon.com", "wufoo.com"}
+  for i := range providers {
+    providerused, _ := regexp.MatchString(providers[i], link)
+    if providerused {
+      return true
+    }
+  }
+  return false
+}
+
+func canTakeover(links []string) []string {
+    var results []string
+    for i := range links {
+        cantakeover := canTakeoverLink(links[i])
+        if cantakeover {
+            results = append(results, links[i])
+        }
+    }
+    return results
+}
+
 
 func main() {
     wg := new(sync.WaitGroup)
