@@ -2,7 +2,6 @@ package main
 
 import (
     "fmt"
-    "log"
     "net/url"
     "regexp"
     "sync"
@@ -35,7 +34,7 @@ func Crawl(job Job, q chan Job, wg *sync.WaitGroup) {
     doc, err := goquery.NewDocument(job.url)
 
     if err != nil {
-      log.Fatal(err)
+      return
     }
     var resources []string
 
