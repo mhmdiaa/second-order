@@ -1,7 +1,10 @@
 package main
 
 import (
+    "encoding/json"
+    "flag"
     "fmt"
+    "io/ioutil"
     "net/url"
     "regexp"
     "sync"
@@ -143,11 +146,22 @@ func canTakeover(links []string) []string {
 
 
 func main() {
+    base := flag.String("base", "http://127.0.0.1", "Base link to start scraping from")
+    depth := flag.Int("depth", 50, "Crawling depth")
+    outfile := flag.String("output", "output.json", "JSON file to save results in")
+    flag.Parse()
+
     wg := new(sync.WaitGroup)
     wg.Add(1)
 
     q := make(chan Job)
     go dedup(q, wg)
-    q <- Job{"http://127.0.0.1", 4}
+    q <- Job{*base, *depth}
     wg.Wait()
+
+    outputJson, _ := json.Marshal(output)
+    err := ioutil.WriteFile(*outfile, outputJson, 0644)
+    if err != nil {
+      fmt.Println(err)
+    }
 }
