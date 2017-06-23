@@ -50,7 +50,7 @@ func Crawl(job Job, q chan Job, wg *sync.WaitGroup) {
     resources = append(resources, canTakeover(objects)...)
 
     if len(resources) > 0 {
-      output["url"] = resources
+      output[job.url] = resources
     }
 
     urls := attrScrape("a", "href", doc)
@@ -149,6 +149,6 @@ func main() {
 
     q := make(chan Job)
     go dedup(q, wg)
-    q <- Job{"http://google.com/search?q=hello", 4}
+    q <- Job{"http://127.0.0.1", 4}
     wg.Wait()
 }
