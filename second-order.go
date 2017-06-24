@@ -146,7 +146,7 @@ func canTakeover(links []string) []string {
 
 func main() {
 	base := flag.String("base", "http://127.0.0.1", "Base link to start scraping from")
-	depth := flag.Int("depth", 50, "Crawling depth")
+	depth := flag.Int("depth", 5, "Crawling depth")
 	outfile := flag.String("output", "output.json", "JSON file to save results in")
 	flag.Parse()
 
