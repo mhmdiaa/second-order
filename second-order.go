@@ -6,8 +6,11 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/url"
+	"net/http"
 	"regexp"
 	"sync"
+	"os"
+	"path/filepath"
 
 	"github.com/PuerkitoBio/goquery"
 )
@@ -17,7 +20,15 @@ type Job struct {
 	depth int
 }
 
-var output = make(map[string][]string)
+var allResources = make(map[string][]string)
+var allInlineScripts = make(map[string][]string)
+var allExternalScripts = make(map[string]map[string]string)
+
+func checkErr(err error) {
+    if err != nil {
+        fmt.Println("ERROR:", err)
+    }
+}
 
 func dedup(ch chan Job, wg *sync.WaitGroup) {
 	seen := make(map[string]bool)
@@ -41,18 +52,23 @@ func Crawl(job Job, q chan Job, wg *sync.WaitGroup) {
 	}
 	var resources []string
 
-	scripts := attrScrape("script", "src", doc)
 	iframes := attrScrape("iframe", "src", doc)
 	svgs := attrScrape("svg", "src", doc)
 	objects := attrScrape("object", "src", doc)
 
-	resources = append(resources, canTakeover(scripts)...)
 	resources = append(resources, canTakeover(iframes)...)
 	resources = append(resources, canTakeover(svgs)...)
 	resources = append(resources, canTakeover(objects)...)
 
+	externalScriptLinks, externalScriptCode, inlineScriptCode := scrapeScripts(doc, job.url)
+
+	resources = append(resources, canTakeover(externalScriptLinks)...)
+
+	allInlineScripts[job.url] = inlineScriptCode
+	allExternalScripts[job.url] = externalScriptCode
+
 	if len(resources) > 0 {
-		output[job.url] = resources
+		allResources[job.url] = resources
 	}
 
 	urls := attrScrape("a", "href", doc)
@@ -78,6 +94,51 @@ func attrScrape(tag string, attr string, doc *goquery.Document) []string {
 	return results
 }
 
+func scrapeScripts(doc *goquery.Document, link string) ([]string, map[string]string, []string) {
+    var links []string
+    externalScripts := make(map[string]string)
+    var inlineScripts []string
+
+    doc.Find("script").Each(func(index int, tag *goquery.Selection) {
+        attr, exists := tag.Attr("src")
+        if exists {
+            links = append(links, attr)
+            code := getScript(attr, link)
+            externalScripts[attr] = code
+        } else {
+            inlineScripts = append(inlineScripts, tag.Text())
+        }
+    })
+
+    return links, externalScripts, inlineScripts
+}
+
+
+func getScript(link string, base string) string{
+	link = absUrl(link, base)
+    client := &http.Client{}
+    req, err := http.NewRequest("GET", link, nil)
+    if err != nil {
+    	fmt.Println(err)
+    	return ""
+    }
+
+    resp, err := client.Do(req)
+    if err != nil {
+    	fmt.Println(err)
+    	return ""
+    }
+
+    defer resp.Body.Close()
+    body, err := ioutil.ReadAll(resp.Body)
+    if err != nil {
+    	fmt.Println(err)
+    	return ""
+    }
+
+    return string(body)
+}
+
 func checkOrigin(link, base string) bool {
 	linkurl, _ := url.Parse(link)
 	linkhost := linkurl.Hostname()
@@ -97,10 +158,12 @@ func checkOrigin(link, base string) bool {
 func absUrl(href, base string) string {
 	url, err := url.Parse(href)
 	if err != nil {
+		fmt.Println(err)
 		return ""
 	}
 	baseUrl, err := url.Parse(base)
 	if err != nil {
+		fmt.Println(err)
 		return ""
 	}
 	url = baseUrl.ResolveReference(url)
@@ -147,7 +210,7 @@ func canTakeover(links []string) []string {
 func main() {
 	base := flag.String("base", "http://127.0.0.1", "Base link to start scraping from")
 	depth := flag.Int("depth", 5, "Crawling depth")
-	outfile := flag.String("output", "output.json", "JSON file to save results in")
+	outdir := flag.String("output", "output", "directory to save results in")
 	flag.Parse()
 
 	wg := new(sync.WaitGroup)
@@ -158,9 +221,18 @@ func main() {
 	q <- Job{*base, *depth}
 	wg.Wait()
 
-	outputJson, _ := json.Marshal(output)
-	err := ioutil.WriteFile(*outfile, outputJson, 0644)
-	if err != nil {
-		fmt.Println(err)
-	}
+	resourcesJson, _ := json.Marshal(allResources)
+	inlineScriptsJson, _ := json.Marshal(allInlineScripts)
+	externalScriptsJson, _ := json.Marshal(allExternalScripts)
+
+	os.MkdirAll(*outdir, os.ModePerm)
+
+	err := ioutil.WriteFile(filepath.Join(*outdir, "resources.json"), resourcesJson, 0644)
+	checkErr(err)
+
+	err = ioutil.WriteFile(filepath.Join(*outdir, "inline-scripts.json"), inlineScriptsJson, 0644)
+	checkErr(err)
+
+	err = ioutil.WriteFile(filepath.Join(*outdir, "external-scripts.json"), externalScriptsJson, 0644)
+	checkErr(err)
 }
