@@ -24,6 +24,14 @@ var allResources = make(map[string][]string)
 var allInlineScripts = make(map[string][]string)
 var allExternalScripts = make(map[string]map[string]string)
 
+var (
+	base = flag.String("base", "http://127.0.0.1", "Base link to start scraping from")
+	depth = flag.Int("depth", 5, "Crawling depth")
+	outdir = flag.String("output", "output", "Directory to save results in")
+	extractJS = flag.Bool("js", false, "Extract JavaScript code from crawled pages")
+)
+
+
 func checkErr(err error) {
     if err != nil {
         fmt.Println("ERROR:", err)
@@ -55,17 +63,19 @@ func Crawl(job Job, q chan Job, wg *sync.WaitGroup) {
 	iframes := attrScrape("iframe", "src", doc)
 	svgs := attrScrape("svg", "src", doc)
 	objects := attrScrape("object", "src", doc)
+	scripts := attrScrape("script", "src", doc)
 
 	resources = append(resources, canTakeover(iframes)...)
 	resources = append(resources, canTakeover(svgs)...)
 	resources = append(resources, canTakeover(objects)...)
+	resources = append(resources, canTakeover(scripts)...)
 
-	externalScriptLinks, externalScriptCode, inlineScriptCode := scrapeScripts(doc, job.url)
+	if *extractJS {
+		externalScriptCode, inlineScriptCode := scrapeScripts(doc, job.url)
 
-	resources = append(resources, canTakeover(externalScriptLinks)...)
-
-	allInlineScripts[job.url] = inlineScriptCode
-	allExternalScripts[job.url] = externalScriptCode
+		allInlineScripts[job.url] = inlineScriptCode
+		allExternalScripts[job.url] = externalScriptCode
+	}
 
 	if len(resources) > 0 {
 		allResources[job.url] = resources
@@ -94,15 +104,13 @@ func attrScrape(tag string, attr string, doc *goquery.Document) []string {
 	return results
 }
 
-func scrapeScripts(doc *goquery.Document, link string) ([]string, map[string]string, []string) {
-    var links []string
+func scrapeScripts(doc *goquery.Document, link string) (map[string]string, []string) {
     externalScripts := make(map[string]string)
     var inlineScripts []string
 
     doc.Find("script").Each(func(index int, tag *goquery.Selection) {
         attr, exists := tag.Attr("src")
         if exists {
-            links = append(links, attr)
             code := getScript(attr, link)
             externalScripts[attr] = code
         } else {
@@ -110,7 +118,7 @@ func scrapeScripts(doc *goquery.Document, link string) ([]string, map[string]str
         }
     })
 
-    return links, externalScripts, inlineScripts
+    return externalScripts, inlineScripts
 }
 
 
@@ -208,9 +216,6 @@ func canTakeover(links []string) []string {
 }
 
 func main() {
-	base := flag.String("base", "http://127.0.0.1", "Base link to start scraping from")
-	depth := flag.Int("depth", 5, "Crawling depth")
-	outdir := flag.String("output", "output", "directory to save results in")
 	flag.Parse()
 
 	wg := new(sync.WaitGroup)
