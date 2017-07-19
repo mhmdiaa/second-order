@@ -5,12 +5,12 @@ import (
 	"flag"
 	"fmt"
 	"io/ioutil"
-	"net/url"
 	"net/http"
-	"regexp"
-	"sync"
+	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
+	"sync"
 
 	"github.com/PuerkitoBio/goquery"
 )
@@ -25,17 +25,16 @@ var allInlineScripts = make(map[string][]string)
 var allExternalScripts = make(map[string]map[string]string)
 
 var (
-	base = flag.String("base", "http://127.0.0.1", "Base link to start scraping from")
-	depth = flag.Int("depth", 5, "Crawling depth")
-	outdir = flag.String("output", "output", "Directory to save results in")
+	base      = flag.String("base", "http://127.0.0.1", "Base link to start scraping from")
+	depth     = flag.Int("depth", 5, "Crawling depth")
+	outdir    = flag.String("output", "output", "Directory to save results in")
 	extractJS = flag.Bool("js", false, "Extract JavaScript code from crawled pages")
 )
 
-
 func checkErr(err error) {
-    if err != nil {
-        fmt.Println("ERROR:", err)
-    }
+	if err != nil {
+		fmt.Println("ERROR:", err)
+	}
 }
 
 func dedup(ch chan Job, wg *sync.WaitGroup) {
@@ -105,46 +104,45 @@ func attrScrape(tag string, attr string, doc *goquery.Document) []string {
 }
 
 func scrapeScripts(doc *goquery.Document, link string) (map[string]string, []string) {
-    externalScripts := make(map[string]string)
-    var inlineScripts []string
+	externalScripts := make(map[string]string)
+	var inlineScripts []string
 
-    doc.Find("script").Each(func(index int, tag *goquery.Selection) {
-        attr, exists := tag.Attr("src")
-        if exists {
-            code := getScript(attr, link)
-            externalScripts[attr] = code
-        } else {
-            inlineScripts = append(inlineScripts, tag.Text())
-        }
-    })
+	doc.Find("script").Each(func(index int, tag *goquery.Selection) {
+		attr, exists := tag.Attr("src")
+		if exists {
+			code := getScript(attr, link)
+			externalScripts[attr] = code
+		} else {
+			inlineScripts = append(inlineScripts, tag.Text())
+		}
+	})
 
-    return externalScripts, inlineScripts
+	return externalScripts, inlineScripts
 }
 
-
-func getScript(link string, base string) string{
+func getScript(link string, base string) string {
 	link = absUrl(link, base)
-    client := &http.Client{}
-    req, err := http.NewRequest("GET", link, nil)
-    if err != nil {
-    	fmt.Println(err)
-    	return ""
-    }
+	client := &http.Client{}
+	req, err := http.NewRequest("GET", link, nil)
+	if err != nil {
+		fmt.Println(err)
+		return ""
+	}
 
-    resp, err := client.Do(req)
-    if err != nil {
-    	fmt.Println(err)
-    	return ""
-    }
+	resp, err := client.Do(req)
+	if err != nil {
+		fmt.Println(err)
+		return ""
+	}
 
-    defer resp.Body.Close()
-    body, err := ioutil.ReadAll(resp.Body)
-    if err != nil {
-    	fmt.Println(err)
-    	return ""
-    }
+	defer resp.Body.Close()
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		fmt.Println(err)
+		return ""
+	}
 
-    return string(body)
+	return string(body)
 }
 
 func checkOrigin(link, base string) bool {
