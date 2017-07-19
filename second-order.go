@@ -234,10 +234,11 @@ func main() {
 
 	err := ioutil.WriteFile(filepath.Join(*outdir, "resources.json"), resourcesJson, 0644)
 	checkErr(err)
+	if *extractJS {
+		err = ioutil.WriteFile(filepath.Join(*outdir, "inline-scripts.json"), inlineScriptsJson, 0644)
+		checkErr(err)
 
-	err = ioutil.WriteFile(filepath.Join(*outdir, "inline-scripts.json"), inlineScriptsJson, 0644)
-	checkErr(err)
-
-	err = ioutil.WriteFile(filepath.Join(*outdir, "external-scripts.json"), externalScriptsJson, 0644)
-	checkErr(err)
+		err = ioutil.WriteFile(filepath.Join(*outdir, "external-scripts.json"), externalScriptsJson, 0644)
+		checkErr(err)
+	}
 }
