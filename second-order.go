@@ -51,7 +51,7 @@ func dedup(ch chan Job, wg *sync.WaitGroup) {
 
 func Crawl(job Job, q chan Job, wg *sync.WaitGroup) {
 	defer wg.Done()
-	fmt.Println(job.url)
+
 	doc, err := goquery.NewDocument(job.url)
 
 	if err != nil {
@@ -82,6 +82,8 @@ func Crawl(job Job, q chan Job, wg *sync.WaitGroup) {
 
 	urls := attrScrape("a", "href", doc)
 	tovisit := toVisit(urls, job.url)
+
+	fmt.Println(job.url)
 
 	if job.depth <= 1 {
 		return
