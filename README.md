@@ -10,7 +10,8 @@ go get github.com/PuerkitoBio/goquery
 
 ### Syntax
 ```
-go run second-order.go -base=http://site.com -depth=5 -output=output.json
+go run second-order.go -base=http://site.com -depth=5 -output=output.json -js
 ```
-
+When the `-js` flag is set, second-order will attempt to store all the JavaScript code that can be found in crawled pages (both inline and external)
+---
 Learn more about second-order subdomain takeover: https://shubs.io/high-frequency-security-bug-hunting-120-days-120-bugs/#secondorder
