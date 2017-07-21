@@ -126,7 +126,7 @@ func scrapeScripts(doc *goquery.Document, link string) (map[string]string, []str
 		if exists {
 			code, err := getScript(attr, link)
 			if err != nil {
-				log.Printf("couldn't get script: %v", err)
+				log.Printf("couldn't get script %s: %v", link, err)
 			}
 			externalScripts[attr] = code
 		} else {
@@ -140,18 +140,18 @@ func scrapeScripts(doc *goquery.Document, link string) (map[string]string, []str
 func getScript(link string, base string) (string, error) {
 	link, err := absURL(link, base)
 	if err != nil {
-		return "", fmt.Errorf("couldn't parse script URL: %v", err)
+		return "", fmt.Errorf("couldn't parse script URL %s: %v", link, err)
 	}
 
 	resp, err := http.Get(link)
 	if err != nil {
-		return "", fmt.Errorf("couldn't load script: %v", err)
+		return "", fmt.Errorf("couldn't load script %s: %v", link, err)
 	}
 
 	defer resp.Body.Close()
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		return "", fmt.Errorf("couldn't read script: %v", err)
+		return "", fmt.Errorf("couldn't read script %s: %v", link, err)
 	}
 	return string(body), nil
 }
