@@ -75,7 +75,8 @@ func crawl(j job, q chan job, wg *sync.WaitGroup) {
 
 	for t, a := range queries {
 		r := attrScrape(t, a, doc)
-		resources = append(resources, r...)
+		assetResources := canTakeover(r)
+		resources = append(resources, assetResources...)
 	}
 
 	if *extractJS {
