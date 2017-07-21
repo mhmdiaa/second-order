@@ -32,12 +32,6 @@ var (
 	extractJS = flag.Bool("js", false, "Extract JavaScript code from crawled pages")
 )
 
-func checkErr(err error) {
-	if err != nil {
-		fmt.Println("ERROR:", err)
-	}
-}
-
 func dedup(ch chan Job, wg *sync.WaitGroup) {
 	seen := make(map[string]bool)
 	for job := range ch {
@@ -246,12 +240,18 @@ func main() {
 	os.MkdirAll(*outdir, os.ModePerm)
 
 	err := ioutil.WriteFile(filepath.Join(*outdir, "resources.json"), resourcesJSON, 0644)
-	checkErr(err)
+	if err != nil {
+		log.Printf("coudln't write resources to JSON: %v", err)
+	}
 	if *extractJS {
 		err = ioutil.WriteFile(filepath.Join(*outdir, "inline-scripts.json"), inlineScriptsJSON, 0644)
-		checkErr(err)
+		if err != nil {
+			log.Printf("coudln't write inline scripts to JSON: %v", err)
+		}
 
 		err = ioutil.WriteFile(filepath.Join(*outdir, "external-scripts.json"), externalScriptsJSON, 0644)
-		checkErr(err)
+		if err != nil {
+			log.Printf("couldn't write external scripts to JSON: %v", err)
+		}
 	}
 }
