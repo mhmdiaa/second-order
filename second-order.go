@@ -16,7 +16,7 @@ import (
 	"github.com/PuerkitoBio/goquery"
 )
 
-type Job struct {
+type job struct {
 	url   string
 	depth int
 }
@@ -27,29 +27,29 @@ var allExternalScripts = make(map[string]map[string]string)
 
 var (
 	base      = flag.String("base", "http://127.0.0.1", "Base link to start scraping from")
-	depth     = flag.Int("depth", 5, "Crawling depth")
+	depth     = flag.Int("depth", 5, "crawling depth")
 	outdir    = flag.String("output", "output", "Directory to save results in")
 	extractJS = flag.Bool("js", false, "Extract JavaScript code from crawled pages")
 )
 
-func dedup(ch chan Job, wg *sync.WaitGroup) {
+func dedup(ch chan job, wg *sync.WaitGroup) {
 	seen := make(map[string]bool)
-	for job := range ch {
-		if seen[job.url] || job.depth <= 0 {
+	for j := range ch {
+		if seen[j.url] || j.depth <= 0 {
 			wg.Done()
 			continue
 		}
-		seen[job.url] = true
-		go Crawl(job, ch, wg)
+		seen[j.url] = true
+		go crawl(j, ch, wg)
 	}
 }
 
-func Crawl(job Job, q chan Job, wg *sync.WaitGroup) {
+func crawl(j job, q chan job, wg *sync.WaitGroup) {
 	defer wg.Done()
 
-	res, err := http.Get(job.url)
+	res, err := http.Get(j.url)
 	if err != nil {
-		log.Printf("could not get %s: %v", job.url, err)
+		log.Printf("could not get %s: %v", j.url, err)
 		return
 	}
 	defer res.Body.Close()
@@ -79,28 +79,28 @@ func Crawl(job Job, q chan Job, wg *sync.WaitGroup) {
 	}
 
 	if *extractJS {
-		externalScriptCode, inlineScriptCode := scrapeScripts(doc, job.url)
+		externalScriptCode, inlineScriptCode := scrapeScripts(doc, j.url)
 
-		allInlineScripts[job.url] = inlineScriptCode
-		allExternalScripts[job.url] = externalScriptCode
+		allInlineScripts[j.url] = inlineScriptCode
+		allExternalScripts[j.url] = externalScriptCode
 	}
 
 	if len(resources) > 0 {
-		allResources[job.url] = resources
+		allResources[j.url] = resources
 	}
 
 	urls := attrScrape("a", "href", doc)
-	tovisit := toVisit(urls, job.url)
+	tovisit := toVisit(urls, j.url)
 
-	fmt.Println(job.url)
+	fmt.Println(j.url)
 
-	if job.depth <= 1 {
+	if j.depth <= 1 {
 		return
 	}
 
 	wg.Add(len(tovisit))
 	for _, u := range tovisit {
-		q <- Job{u, job.depth - 1}
+		q <- job{u, j.depth - 1}
 	}
 
 }
@@ -228,9 +228,9 @@ func main() {
 	wg := new(sync.WaitGroup)
 	wg.Add(1)
 
-	q := make(chan Job)
+	q := make(chan job)
 	go dedup(q, wg)
-	q <- Job{*base, *depth}
+	q <- job{*base, *depth}
 	wg.Wait()
 
 	resourcesJSON, _ := json.Marshal(allResources)
