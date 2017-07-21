@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -52,22 +53,36 @@ func dedup(ch chan Job, wg *sync.WaitGroup) {
 func Crawl(job Job, q chan Job, wg *sync.WaitGroup) {
 	defer wg.Done()
 
-	doc, err := goquery.NewDocument(job.url)
-
+	res, err := http.Get(job.url)
 	if err != nil {
+		log.Printf("could not get %s: %v", job.url, err)
 		return
 	}
+	defer res.Body.Close()
+
+	if res.StatusCode == http.StatusTooManyRequests {
+		log.Printf("you are being rate limited")
+		return
+	}
+
+	doc, err := goquery.NewDocumentFromReader(res.Body)
+	if err != nil {
+		log.Printf("could not parse page: %v", err)
+		return
+	}
+
 	var resources []string
 
-	iframes := attrScrape("iframe", "src", doc)
-	svgs := attrScrape("svg", "src", doc)
-	objects := attrScrape("object", "src", doc)
-	scripts := attrScrape("script", "src", doc)
+	queries := make(map[string]string)
+	queries["iframe"] = "src"
+	queries["svg"] = "src"
+	queries["object"] = "src"
+	queries["script"] = "src"
 
-	resources = append(resources, canTakeover(iframes)...)
-	resources = append(resources, canTakeover(svgs)...)
-	resources = append(resources, canTakeover(objects)...)
-	resources = append(resources, canTakeover(scripts)...)
+	for t, a := range queries {
+		r := attrScrape(t, a, doc)
+		resources = append(resources, r...)
+	}
 
 	if *extractJS {
 		externalScriptCode, inlineScriptCode := scrapeScripts(doc, job.url)
@@ -99,8 +114,10 @@ func Crawl(job Job, q chan Job, wg *sync.WaitGroup) {
 func attrScrape(tag string, attr string, doc *goquery.Document) []string {
 	var results []string
 	doc.Find(tag).Each(func(index int, tag *goquery.Selection) {
-		attrValue, _ := tag.Attr(attr)
-		results = append(results, attrValue)
+		attr, exists := tag.Attr(attr)
+		if exists {
+			results = append(results, attr)
+		}
 	})
 	return results
 }
@@ -112,7 +129,10 @@ func scrapeScripts(doc *goquery.Document, link string) (map[string]string, []str
 	doc.Find("script").Each(func(index int, tag *goquery.Selection) {
 		attr, exists := tag.Attr("src")
 		if exists {
-			code := getScript(attr, link)
+			code, err := getScript(attr, link)
+			if err != nil {
+				log.Printf("couldn't get script: %v", err)
+			}
 			externalScripts[attr] = code
 		} else {
 			inlineScripts = append(inlineScripts, tag.Text())
@@ -122,37 +142,31 @@ func scrapeScripts(doc *goquery.Document, link string) (map[string]string, []str
 	return externalScripts, inlineScripts
 }
 
-func getScript(link string, base string) string {
-	link = absUrl(link, base)
-	client := &http.Client{}
-	req, err := http.NewRequest("GET", link, nil)
+func getScript(link string, base string) (string, error) {
+	link, err := absURL(link, base)
 	if err != nil {
-		fmt.Println(err)
-		return ""
+		return "", fmt.Errorf("couldn't parse script URL: %v", err)
 	}
 
-	resp, err := client.Do(req)
+	resp, err := http.Get(link)
 	if err != nil {
-		fmt.Println(err)
-		return ""
+		return "", fmt.Errorf("couldn't load script: %v", err)
 	}
 
 	defer resp.Body.Close()
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		fmt.Println(err)
-		return ""
+		return "", fmt.Errorf("couldn't read script: %v", err)
 	}
-
-	return string(body)
+	return string(body), nil
 }
 
 func checkOrigin(link, base string) bool {
 	linkurl, _ := url.Parse(link)
 	linkhost := linkurl.Hostname()
 
-	baseurl, _ := url.Parse(base)
-	basehost := baseurl.Hostname()
+	baseURL, _ := url.Parse(base)
+	basehost := baseURL.Hostname()
 
 	// check the main domain not the subdomain
 	// checkOrigin ("https://docs.google.com", "https://mail.google.com") => true
@@ -163,26 +177,25 @@ func checkOrigin(link, base string) bool {
 	return false
 }
 
-func absUrl(href, base string) string {
+func absURL(href, base string) (string, error) {
 	url, err := url.Parse(href)
 	if err != nil {
-		fmt.Println(err)
-		return ""
+		return "", fmt.Errorf("couldn't parse URL: %v", err)
 	}
-	baseUrl, err := url.Parse(base)
+	baseURL, err := url.Parse(base)
 	if err != nil {
-		fmt.Println(err)
-		return ""
+		return "", fmt.Errorf("couldn't parse URL: %v", err)
 	}
-	url = baseUrl.ResolveReference(url)
-	return url.String()
+	url = baseURL.ResolveReference(url)
+	return url.String(), nil
 }
 
 func toVisit(urls []string, base string) []string {
 	var tovisit []string
 	for _, u := range urls {
-		absolute := absUrl(u, base)
-		if absolute == "" {
+		absolute, err := absURL(u, base)
+		if err != nil {
+			log.Printf("couldn't parse URL: %v", err)
 			continue
 		}
 		if checkOrigin(absolute, base) {
@@ -226,19 +239,19 @@ func main() {
 	q <- Job{*base, *depth}
 	wg.Wait()
 
-	resourcesJson, _ := json.Marshal(allResources)
-	inlineScriptsJson, _ := json.Marshal(allInlineScripts)
-	externalScriptsJson, _ := json.Marshal(allExternalScripts)
+	resourcesJSON, _ := json.Marshal(allResources)
+	inlineScriptsJSON, _ := json.Marshal(allInlineScripts)
+	externalScriptsJSON, _ := json.Marshal(allExternalScripts)
 
 	os.MkdirAll(*outdir, os.ModePerm)
 
-	err := ioutil.WriteFile(filepath.Join(*outdir, "resources.json"), resourcesJson, 0644)
+	err := ioutil.WriteFile(filepath.Join(*outdir, "resources.json"), resourcesJSON, 0644)
 	checkErr(err)
 	if *extractJS {
-		err = ioutil.WriteFile(filepath.Join(*outdir, "inline-scripts.json"), inlineScriptsJson, 0644)
+		err = ioutil.WriteFile(filepath.Join(*outdir, "inline-scripts.json"), inlineScriptsJSON, 0644)
 		checkErr(err)
 
-		err = ioutil.WriteFile(filepath.Join(*outdir, "external-scripts.json"), externalScriptsJson, 0644)
+		err = ioutil.WriteFile(filepath.Join(*outdir, "external-scripts.json"), externalScriptsJSON, 0644)
 		checkErr(err)
 	}
 }
