@@ -21,9 +21,20 @@ type job struct {
 	depth int
 }
 
-var allResources = make(map[string][]string)
-var allInlineScripts = make(map[string][]string)
-var allExternalScripts = make(map[string]map[string]string)
+var allResources = struct{
+	sync.RWMutex
+	resources map[string][]string
+}{resources: make(map[string][]string)}
+
+var allInlineScripts = struct{
+	sync.RWMutex
+	scripts map[string][]string
+}{scripts: make(map[string][]string)}
+
+var allExternalScripts = struct{
+	sync.RWMutex
+	scripts map[string]map[string]string
+}{scripts: make(map[string]map[string]string)}
 
 var (
 	base      = flag.String("base", "http://127.0.0.1", "Base link to start scraping from")
@@ -82,12 +93,19 @@ func crawl(j job, q chan job, wg *sync.WaitGroup) {
 	if *extractJS {
 		externalScriptCode, inlineScriptCode := scrapeScripts(doc, j.url)
 
-		allInlineScripts[j.url] = inlineScriptCode
-		allExternalScripts[j.url] = externalScriptCode
+		allInlineScripts.Lock()
+		allInlineScripts.scripts[j.url] = inlineScriptCode
+		allInlineScripts.Unlock()
+
+		allInlineScripts.Lock()
+		allExternalScripts.scripts[j.url] = externalScriptCode
+		allInlineScripts.Unlock()
 	}
 
 	if len(resources) > 0 {
-		allResources[j.url] = resources
+		allResources.Lock()
+		allResources.resources[j.url] = resources
+		allResources.Unlock()
 	}
 
 	urls := attrScrape("a", "href", doc)
@@ -234,9 +252,9 @@ func main() {
 	q <- job{*base, *depth}
 	wg.Wait()
 
-	resourcesJSON, _ := json.Marshal(allResources)
-	inlineScriptsJSON, _ := json.Marshal(allInlineScripts)
-	externalScriptsJSON, _ := json.Marshal(allExternalScripts)
+	resourcesJSON, _ := json.Marshal(allResources.resources)
+	inlineScriptsJSON, _ := json.Marshal(allInlineScripts.scripts)
+	externalScriptsJSON, _ := json.Marshal(allExternalScripts.scripts)
 
 	os.MkdirAll(*outdir, os.ModePerm)
 
