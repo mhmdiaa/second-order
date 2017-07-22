@@ -63,7 +63,6 @@ func crawl(j job, q chan job, wg *sync.WaitGroup) {
 		log.Printf("could not get %s: %v", j.url, err)
 		return
 	}
-	defer res.Body.Close()
 
 	if res.StatusCode == http.StatusTooManyRequests {
 		log.Printf("you are being rate limited")
@@ -75,6 +74,7 @@ func crawl(j job, q chan job, wg *sync.WaitGroup) {
 		log.Printf("could not parse page: %v", err)
 		return
 	}
+	res.Body.Close()
 
 	var resources []string
 
@@ -166,8 +166,8 @@ func getScript(link string, base string) (string, error) {
 		return "", fmt.Errorf("couldn't load script %s: %v", link, err)
 	}
 
-	defer resp.Body.Close()
 	body, err := ioutil.ReadAll(resp.Body)
+	resp.Body.Close()
 	if err != nil {
 		return "", fmt.Errorf("couldn't read script %s: %v", link, err)
 	}
