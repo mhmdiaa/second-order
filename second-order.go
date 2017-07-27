@@ -21,20 +21,20 @@ type job struct {
 	depth int
 }
 
-var allResources = struct{
+var allResources = struct {
 	sync.RWMutex
 	resources map[string][]string
 }{resources: make(map[string][]string)}
 
-var allInlineScripts = struct{
+var allInlineScripts = struct {
 	sync.RWMutex
 	scripts map[string][]string
 }{scripts: make(map[string][]string)}
 
-var allExternalScripts = struct{
+var allExternalScripts = struct {
 	sync.RWMutex
-	scripts map[string]map[string]string
-}{scripts: make(map[string]map[string]string)}
+	scripts map[string][]string
+}{scripts: make(map[string][]string)}
 
 var (
 	base      = flag.String("base", "http://127.0.0.1", "Base link to start scraping from")
@@ -91,15 +91,19 @@ func crawl(j job, q chan job, wg *sync.WaitGroup) {
 	}
 
 	if *extractJS {
-		externalScriptCode, inlineScriptCode := scrapeScripts(doc, j.url)
+		externalScriptLinks, inlineScriptCode := scrapeScripts(doc, j.url)
 
-		allInlineScripts.Lock()
-		allInlineScripts.scripts[j.url] = inlineScriptCode
-		allInlineScripts.Unlock()
+		if len(inlineScriptCode) > 0 {
+			allInlineScripts.Lock()
+			allInlineScripts.scripts[j.url] = inlineScriptCode
+			allInlineScripts.Unlock()
+		}
 
-		allInlineScripts.Lock()
-		allExternalScripts.scripts[j.url] = externalScriptCode
-		allInlineScripts.Unlock()
+		if len(externalScriptLinks) > 0 {
+			allExternalScripts.Lock()
+			allExternalScripts.scripts[j.url] = externalScriptLinks
+			allExternalScripts.Unlock()
+		}
 	}
 
 	if len(resources) > 0 {
@@ -135,43 +139,20 @@ func attrScrape(tag string, attr string, doc *goquery.Document) []string {
 	return results
 }
 
-func scrapeScripts(doc *goquery.Document, link string) (map[string]string, []string) {
-	externalScripts := make(map[string]string)
+func scrapeScripts(doc *goquery.Document, link string) ([]string, []string) {
+	var externalScripts []string
 	var inlineScripts []string
 
 	doc.Find("script").Each(func(index int, tag *goquery.Selection) {
 		attr, exists := tag.Attr("src")
 		if exists {
-			code, err := getScript(attr, link)
-			if err != nil {
-				log.Printf("couldn't get script %s: %v", link, err)
-			}
-			externalScripts[attr] = code
+			externalScripts = append(externalScripts, attr)
 		} else {
 			inlineScripts = append(inlineScripts, tag.Text())
 		}
 	})
 
 	return externalScripts, inlineScripts
-}
-
-func getScript(link string, base string) (string, error) {
-	link, err := absURL(link, base)
-	if err != nil {
-		return "", fmt.Errorf("couldn't parse script URL %s: %v", link, err)
-	}
-
-	resp, err := http.Get(link)
-	if err != nil {
-		return "", fmt.Errorf("couldn't load script %s: %v", link, err)
-	}
-
-	body, err := ioutil.ReadAll(resp.Body)
-	resp.Body.Close()
-	if err != nil {
-		return "", fmt.Errorf("couldn't read script %s: %v", link, err)
-	}
-	return string(body), nil
 }
 
 func checkOrigin(link, base string) bool {
