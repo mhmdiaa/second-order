@@ -8,6 +8,15 @@ Go is required.
 go get github.com/PuerkitoBio/goquery
 ```
 
+```
+cd $GOPATH/src/github.com/
+git clone https://github.com/mhmdiaa/second-order.git
+cd second-order
+go install
+go build
+cd $GOPATH/bin/
+./second-order
+```
 ### Syntax
 ```
 go run second-order.go -base=http://site.com -depth=5 -output=output.json -js
