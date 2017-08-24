@@ -5,8 +5,9 @@ This tool crawls a given URL and returns pages that have external resources embe
 ### Installation
 Go is required.
 ```
-go get github.com/PuerkitoBio/goquery
+go get github.com/mhmdiaa/second-order
 ```
+This will download the code, compile it, and leave a `second-order` binary in $GOPATH/bin.
 
 ### Syntax
 ```
