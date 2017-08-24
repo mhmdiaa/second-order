@@ -9,6 +9,15 @@ go get github.com/mhmdiaa/second-order
 ```
 This will download the code, compile it, and leave a `second-order` binary in $GOPATH/bin.
 
+```
+cd $GOPATH/src/github.com/
+git clone https://github.com/mhmdiaa/second-order.git
+cd second-order
+go install
+go build
+cd $GOPATH/bin/
+./second-order
+```
 ### Syntax
 ```
 go run second-order.go -base=http://site.com -depth=5 -output=output.json -js
