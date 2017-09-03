@@ -9,12 +9,18 @@ go get github.com/mhmdiaa/second-order
 ```
 This will download the code, compile it, and leave a `second-order` binary in $GOPATH/bin.
 
-### Syntax
+### Usage
 ```
-go run second-order.go -base=http://site.com -depth=5 -output=output.json -js
+  -base string
+        Base link to start scraping from (default "http://127.0.0.1")
+  -depth int
+        crawling depth (default 5)
+  -js
+        Extract JavaScript code from crawled pages
+  -log
+        Log crawled URLs to a file
+  -output string
+        Directory to save results in (default "output")
 ```
 
-When the `-js` flag is set, second-order will attempt to store all the JavaScript code that can be found in crawled pages (both inline and external)
-
----
 Learn more about second-order subdomain takeover: https://shubs.io/high-frequency-security-bug-hunting-120-days-120-bugs/#secondorder

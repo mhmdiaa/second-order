@@ -42,7 +42,7 @@ var (
 	depth     = flag.Int("depth", 5, "crawling depth")
 	outdir    = flag.String("output", "output", "Directory to save results in")
 	extractJS = flag.Bool("js", false, "Extract JavaScript code from crawled pages")
-	logURLs   = flag.Bool("log", false, "Log URLs to a file")
+	logURLs   = flag.Bool("log", false, "Log crawled URLs to a file")
 )
 
 var seen = make(map[string]bool)
