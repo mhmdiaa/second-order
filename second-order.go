@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"sync"
 
 	"github.com/PuerkitoBio/goquery"
@@ -41,10 +42,13 @@ var (
 	depth     = flag.Int("depth", 5, "crawling depth")
 	outdir    = flag.String("output", "output", "Directory to save results in")
 	extractJS = flag.Bool("js", false, "Extract JavaScript code from crawled pages")
+	logURLs   = flag.Bool("log", false, "Log URLs to a file")
 )
 
+var seen = make(map[string]bool)
+
 func dedup(ch chan job, wg *sync.WaitGroup) {
-	seen := make(map[string]bool)
+
 	for j := range ch {
 		if seen[j.url] || j.depth <= 0 {
 			wg.Done()
@@ -252,6 +256,18 @@ func main() {
 		err = ioutil.WriteFile(filepath.Join(*outdir, "external-scripts.json"), externalScriptsJSON, 0644)
 		if err != nil {
 			log.Printf("couldn't write external scripts to JSON: %v", err)
+		}
+	}
+
+	if *logURLs == true {
+		URLs := []string{}
+		for u := range seen {
+			URLs = append(URLs, u)
+		}
+		l := strings.Join(URLs, "\n")
+		err = ioutil.WriteFile(filepath.Join(*outdir, "log.txt"), []byte(l), 0644)
+		if err != nil {
+			log.Printf("couldn't write to URL log: %v", err)
 		}
 	}
 }
