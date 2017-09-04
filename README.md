@@ -13,8 +13,10 @@ This will download the code, compile it, and leave a `second-order` binary in $G
 ```
   -base string
         Base link to start scraping from (default "http://127.0.0.1")
+  -cookies string
+        List of comma-delimited cookies
   -depth int
-        crawling depth (default 5)
+        Crawling depth (default 5)
   -js
         Extract JavaScript code from crawled pages
   -log

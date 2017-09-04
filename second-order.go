@@ -39,13 +39,17 @@ var allExternalScripts = struct {
 
 var (
 	base      = flag.String("base", "http://127.0.0.1", "Base link to start scraping from")
-	depth     = flag.Int("depth", 5, "crawling depth")
+	depth     = flag.Int("depth", 5, "Crawling depth")
 	outdir    = flag.String("output", "output", "Directory to save results in")
 	extractJS = flag.Bool("js", false, "Extract JavaScript code from crawled pages")
 	logURLs   = flag.Bool("log", false, "Log crawled URLs to a file")
+    cookieList   = flag.String("cookies", "", "List of comma-delimited cookies")
 )
 
 var seen = make(map[string]bool)
+
+var cookies []http.Cookie
+
 
 func dedup(ch chan job, wg *sync.WaitGroup) {
 
@@ -62,9 +66,20 @@ func dedup(ch chan job, wg *sync.WaitGroup) {
 func crawl(j job, q chan job, wg *sync.WaitGroup) {
 	defer wg.Done()
 
-	res, err := http.Get(j.url)
+    req, err := http.NewRequest("GET", j.url, nil)
+    if err != nil {
+        log.Printf("could not create request for %s: %v", j.url, err)
+    }
+
+    for _, cookie := range cookies {
+        req.AddCookie(&cookie)
+    }
+
+    client := &http.Client{}
+
+	res, err := client.Do(req)
 	if err != nil {
-		log.Printf("could not get %s: %v", j.url, err)
+		log.Printf("could not request %s: %v", j.url, err)
 		return
 	}
 
@@ -231,6 +246,19 @@ func main() {
 
 	wg := new(sync.WaitGroup)
 	wg.Add(1)
+
+    cookieSlice := strings.Split(*cookieList, ",")
+
+    if cookieSlice[0] != "" {
+        for _, c := range(cookieSlice) {
+            nameValue := strings.Split(c, "=")
+            if len(nameValue) != 2 {
+                log.Fatal("malformed cookie supplied")
+            }
+            cookie := http.Cookie{Name: nameValue[0], Value:nameValue[1]}
+            cookies = append(cookies, cookie)
+        }
+    }
 
 	q := make(chan job)
 	go dedup(q, wg)
