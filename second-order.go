@@ -50,6 +50,11 @@ var seen = make(map[string]bool)
 
 var cookies []http.Cookie
 
+var headers = map[string]string{
+	"header1": "value1",
+	"header2": "value2",
+}
+
 func dedup(ch chan job, wg *sync.WaitGroup) {
 
 	for j := range ch {
@@ -65,20 +70,9 @@ func dedup(ch chan job, wg *sync.WaitGroup) {
 func crawl(j job, q chan job, wg *sync.WaitGroup) {
 	defer wg.Done()
 
-	req, err := http.NewRequest("GET", j.url, nil)
+	res, err := httpGET(j.url)
 	if err != nil {
-		log.Printf("could not create request for %s: %v", j.url, err)
-	}
-
-	for _, cookie := range cookies {
-		req.AddCookie(&cookie)
-	}
-
-	client := &http.Client{}
-
-	res, err := client.Do(req)
-	if err != nil {
-		log.Printf("could not request %s: %v", j.url, err)
+		log.Print(err)
 		return
 	}
 
@@ -144,6 +138,29 @@ func crawl(j job, q chan job, wg *sync.WaitGroup) {
 		q <- job{u, j.depth - 1}
 	}
 
+}
+
+func httpGET(url string) (*http.Response, error) {
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("could not create request for %s: %v", url, err)
+	}
+
+	for _, cookie := range cookies {
+		req.AddCookie(&cookie)
+	}
+
+	for key, value := range headers {
+		req.Header.Add(key, value)
+	}
+
+	client := &http.Client{}
+
+	res, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("could not request %s: %v", url, err)
+	}
+	return res, nil
 }
 
 func attrScrape(tag string, attr string, doc *goquery.Document) []string {
