@@ -17,6 +17,20 @@ import (
 	"github.com/PuerkitoBio/goquery"
 )
 
+type config struct {
+	headers               map[string]string
+	depth                 int
+	log_all_URLs          bool
+	log_non_200           bool
+	excluded_status_codes []string
+	log_status_codes      []int
+	log_URL_regex         []string
+	log_available_domains bool
+	log_inline_JS
+	excluded_URL_regex []string
+	queries            map[string]string
+}
+
 type job struct {
 	url   string
 	depth int
@@ -39,20 +53,69 @@ var allExternalScripts = struct {
 
 var (
 	base       = flag.String("base", "http://127.0.0.1", "Base link to start scraping from")
-	depth      = flag.Int("depth", 5, "Crawling depth")
+	configFile = flag.String("config", "config.json", "Config file")
 	outdir     = flag.String("output", "output", "Directory to save results in")
-	extractJS  = flag.Bool("js", false, "Extract JavaScript code from crawled pages")
-	logURLs    = flag.Bool("log", false, "Log crawled URLs to a file")
-	cookieList = flag.String("cookies", "", "List of comma-delimited cookies")
 )
 
 var seen = make(map[string]bool)
 
-var cookies []http.Cookie
+func main() {
+	flag.Parse()
 
-var headers = map[string]string{
-	"header1": "value1",
-	"header2": "value2",
+	wg := new(sync.WaitGroup)
+	wg.Add(1)
+
+	cookieSlice := strings.Split(*cookieList, ",")
+
+	if cookieSlice[0] != "" {
+		for _, c := range cookieSlice {
+			nameValue := strings.Split(c, "=")
+			if len(nameValue) != 2 {
+				log.Fatal("malformed cookie supplied")
+			}
+			cookie := http.Cookie{Name: nameValue[0], Value: nameValue[1]}
+			cookies = append(cookies, cookie)
+		}
+	}
+
+	q := make(chan job)
+	go dedup(q, wg)
+	q <- job{*base, *depth}
+	wg.Wait()
+
+	resourcesJSON, _ := json.Marshal(allResources.resources)
+	inlineScriptsJSON, _ := json.Marshal(allInlineScripts.scripts)
+	externalScriptsJSON, _ := json.Marshal(allExternalScripts.scripts)
+
+	os.MkdirAll(*outdir, os.ModePerm)
+
+	err := ioutil.WriteFile(filepath.Join(*outdir, "resources.json"), resourcesJSON, 0644)
+	if err != nil {
+		log.Printf("coudln't write resources to JSON: %v", err)
+	}
+	if *extractJS {
+		err = ioutil.WriteFile(filepath.Join(*outdir, "inline-scripts.json"), inlineScriptsJSON, 0644)
+		if err != nil {
+			log.Printf("coudln't write inline scripts to JSON: %v", err)
+		}
+
+		err = ioutil.WriteFile(filepath.Join(*outdir, "external-scripts.json"), externalScriptsJSON, 0644)
+		if err != nil {
+			log.Printf("couldn't write external scripts to JSON: %v", err)
+		}
+	}
+
+	if *logURLs == true {
+		URLs := []string{}
+		for u := range seen {
+			URLs = append(URLs, u)
+		}
+		l := strings.Join(URLs, "\n")
+		err = ioutil.WriteFile(filepath.Join(*outdir, "log.txt"), []byte(l), 0644)
+		if err != nil {
+			log.Printf("couldn't write to URL log: %v", err)
+		}
+	}
 }
 
 func dedup(ch chan job, wg *sync.WaitGroup) {
@@ -258,63 +321,4 @@ func canTakeover(links []string) []string {
 		}
 	}
 	return results
-}
-
-func main() {
-	flag.Parse()
-
-	wg := new(sync.WaitGroup)
-	wg.Add(1)
-
-	cookieSlice := strings.Split(*cookieList, ",")
-
-	if cookieSlice[0] != "" {
-		for _, c := range cookieSlice {
-			nameValue := strings.Split(c, "=")
-			if len(nameValue) != 2 {
-				log.Fatal("malformed cookie supplied")
-			}
-			cookie := http.Cookie{Name: nameValue[0], Value: nameValue[1]}
-			cookies = append(cookies, cookie)
-		}
-	}
-
-	q := make(chan job)
-	go dedup(q, wg)
-	q <- job{*base, *depth}
-	wg.Wait()
-
-	resourcesJSON, _ := json.Marshal(allResources.resources)
-	inlineScriptsJSON, _ := json.Marshal(allInlineScripts.scripts)
-	externalScriptsJSON, _ := json.Marshal(allExternalScripts.scripts)
-
-	os.MkdirAll(*outdir, os.ModePerm)
-
-	err := ioutil.WriteFile(filepath.Join(*outdir, "resources.json"), resourcesJSON, 0644)
-	if err != nil {
-		log.Printf("coudln't write resources to JSON: %v", err)
-	}
-	if *extractJS {
-		err = ioutil.WriteFile(filepath.Join(*outdir, "inline-scripts.json"), inlineScriptsJSON, 0644)
-		if err != nil {
-			log.Printf("coudln't write inline scripts to JSON: %v", err)
-		}
-
-		err = ioutil.WriteFile(filepath.Join(*outdir, "external-scripts.json"), externalScriptsJSON, 0644)
-		if err != nil {
-			log.Printf("couldn't write external scripts to JSON: %v", err)
-		}
-	}
-
-	if *logURLs == true {
-		URLs := []string{}
-		for u := range seen {
-			URLs = append(URLs, u)
-		}
-		l := strings.Join(URLs, "\n")
-		err = ioutil.WriteFile(filepath.Join(*outdir, "log.txt"), []byte(l), 0644)
-		if err != nil {
-			log.Printf("couldn't write to URL log: %v", err)
-		}
-	}
 }

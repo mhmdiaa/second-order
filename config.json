@@ -8,20 +8,20 @@
 
     "log_all_URLs": false,
 
-    "log_any_non_200_URL": true,
+    "log_non_200": true,
     "excluded_status_codes": [401, 403],
 
     "log_status_codes": [404],
 
     "log_URL_regex": ["amazonaws.com", "wufoo.com"],
 
-    "log_available_domain_names": false,
+    "log_available_domains": false,
 
     "log_inline_JS": false,
 
-    "excluded_domain_names": ["linkedin.com", "youtube.com"],
+    "excluded_URL_regex": ["linkedin.com", "youtube.com"],
 
-    "tags": {
+    "queries": {
         "iframe": "src",
         "svg": "src",
         "object": "src",
