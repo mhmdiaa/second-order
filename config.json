@@ -1,0 +1,30 @@
+{
+    "headers": {
+        "header1": "value1",
+        "Cookie": "foo=bar"
+    },
+
+    "depth": 5,
+
+    "log_all_URLs": false,
+
+    "log_any_non_200_URL": true,
+    "excluded_status_codes": [401, 403],
+
+    "log_status_codes": [404],
+
+    "log_URL_regex": ["amazonaws.com", "wufoo.com"],
+
+    "log_available_domain_names": false,
+
+    "log_inline_JS": false,
+
+    "excluded_domain_names": ["linkedin.com", "youtube.com"],
+
+    "tags": {
+        "iframe": "src",
+        "svg": "src",
+        "object": "src",
+        "script": "src"
+    }
+}
