@@ -17,39 +17,47 @@ import (
 	"github.com/PuerkitoBio/goquery"
 )
 
-type config struct {
-	headers               map[string]string
-	depth                 int
-	log_all_URLs          bool
-	log_non_200           bool
-	excluded_status_codes []string
-	log_status_codes      []int
-	log_URL_regex         []string
-	log_available_domains bool
-	log_inline_JS
-	excluded_URL_regex []string
-	queries            map[string]string
+// Configuration holds all the data passed from the config file
+// the target is specified in a flag so we don't have to edit the configuration file every time we run the tool
+type Configuration struct {
+	Headers             map[string]string
+	Depth               int
+	LogCrawledURLs      bool
+	LogQueries          map[string]string
+	LogURLRegex         []string
+	LogNon200Queries    map[string]string
+	ExcludedURLRegex    []string
+	ExcludedStatusCodes []int
+	LogInlineJS         bool
 }
 
 type job struct {
-	url   string
-	depth int
+	URL                 string
+	Headers             map[string]string
+	Depth               int
+	LogQueries          map[string]string
+	LogURLRegex         []string
+	LogNon200Queries    map[string]string
+	ExcludedURLRegex    []string
+	ExcludedStatusCodes []int
+	LogInlineJS         bool
 }
 
-var allResources = struct {
+// global variables to store the gathered info
+var loggedQueries = struct {
 	sync.RWMutex
-	resources map[string][]string
-}{resources: make(map[string][]string)}
+	content map[string][]string
+}{content: make(map[string][]string)}
 
-var allInlineScripts = struct {
+var loggedNon200Queries = struct {
 	sync.RWMutex
-	scripts map[string][]string
-}{scripts: make(map[string][]string)}
+	content map[string][]string
+}{content: make(map[string][]string)}
 
-var allExternalScripts = struct {
+var loggedInlineJS = struct {
 	sync.RWMutex
-	scripts map[string][]string
-}{scripts: make(map[string][]string)}
+	content map[string][]string
+}{content: make(map[string][]string)}
 
 var (
 	base       = flag.String("base", "http://127.0.0.1", "Base link to start scraping from")
@@ -59,53 +67,46 @@ var (
 
 var seen = make(map[string]bool)
 
+// store configuration in a global variable accessible to all functions so we don't have to pass it around all the time
+var config Configuration
+
 func main() {
 	flag.Parse()
 
 	wg := new(sync.WaitGroup)
 	wg.Add(1)
 
-	cookieSlice := strings.Split(*cookieList, ",")
-
-	if cookieSlice[0] != "" {
-		for _, c := range cookieSlice {
-			nameValue := strings.Split(c, "=")
-			if len(nameValue) != 2 {
-				log.Fatal("malformed cookie supplied")
-			}
-			cookie := http.Cookie{Name: nameValue[0], Value: nameValue[1]}
-			cookies = append(cookies, cookie)
-		}
+	config, err := getConfigFile(*configFile)
+	if err != nil {
+		log.Fatal(err)
 	}
 
 	q := make(chan job)
 	go dedup(q, wg)
-	q <- job{*base, *depth}
+	q <- job{*base, config.Headers, config.Depth, config.LogQueries, config.LogURLRegex, config.LogNon200Queries, config.ExcludedURLRegex, config.ExcludedStatusCodes, config.LogInlineJS}
 	wg.Wait()
-
-	resourcesJSON, _ := json.Marshal(allResources.resources)
-	inlineScriptsJSON, _ := json.Marshal(allInlineScripts.scripts)
-	externalScriptsJSON, _ := json.Marshal(allExternalScripts.scripts)
 
 	os.MkdirAll(*outdir, os.ModePerm)
 
-	err := ioutil.WriteFile(filepath.Join(*outdir, "resources.json"), resourcesJSON, 0644)
-	if err != nil {
-		log.Printf("coudln't write resources to JSON: %v", err)
-	}
-	if *extractJS {
-		err = ioutil.WriteFile(filepath.Join(*outdir, "inline-scripts.json"), inlineScriptsJSON, 0644)
+	if config.LogQueries != nil {
+		err = writeResults("logged-queries.json", loggedQueries.content)
 		if err != nil {
-			log.Printf("coudln't write inline scripts to JSON: %v", err)
-		}
-
-		err = ioutil.WriteFile(filepath.Join(*outdir, "external-scripts.json"), externalScriptsJSON, 0644)
-		if err != nil {
-			log.Printf("couldn't write external scripts to JSON: %v", err)
+			log.Printf("Error writing query results: %v", err)
 		}
 	}
-
-	if *logURLs == true {
+	if config.LogInlineJS {
+		err = writeResults("inline-scripts.json", loggedInlineJS.content)
+		if err != nil {
+			log.Printf("Error writing inline scripts: %v", err)
+		}
+	}
+	if config.LogNon200Queries != nil {
+		err = writeResults("logged-non-200-queries.json", loggedNon200Queries.content)
+		if err != nil {
+			log.Printf("Error writing non-200 query results: %v", err)
+		}
+	}
+	if config.LogCrawledURLs {
 		URLs := []string{}
 		for u := range seen {
 			URLs = append(URLs, u)
@@ -118,14 +119,31 @@ func main() {
 	}
 }
 
+func getConfigFile(location string) (Configuration, error) {
+	f, err := os.Open(location)
+	if err != nil {
+		return Configuration{}, fmt.Errorf("could not open Configuration file: %v", err)
+	}
+	defer f.Close()
+
+	decoder := json.NewDecoder(f)
+	config := Configuration{}
+	err = decoder.Decode(&config)
+	if err != nil {
+		return Configuration{}, fmt.Errorf("could not decode Configuration file: %v", err)
+	}
+
+	return config, nil
+}
+
 func dedup(ch chan job, wg *sync.WaitGroup) {
 
 	for j := range ch {
-		if seen[j.url] || j.depth <= 0 {
+		if seen[j.URL] || j.Depth <= 0 {
 			wg.Done()
 			continue
 		}
-		seen[j.url] = true
+		seen[j.URL] = true
 		go crawl(j, ch, wg)
 	}
 }
@@ -133,7 +151,7 @@ func dedup(ch chan job, wg *sync.WaitGroup) {
 func crawl(j job, q chan job, wg *sync.WaitGroup) {
 	defer wg.Done()
 
-	res, err := httpGET(j.url)
+	res, err := httpGET(j.URL, j.Headers)
 	if err != nil {
 		log.Print(err)
 		return
@@ -151,66 +169,71 @@ func crawl(j job, q chan job, wg *sync.WaitGroup) {
 	}
 	res.Body.Close()
 
-	var resources []string
+	if j.LogQueries != nil {
+		var foundResources []string
+		for t, a := range j.LogQueries {
+			resources := attrScrape(t, a, doc)
+			if j.LogURLRegex != nil {
+				resources = matchURLRegex(resources, j.LogURLRegex)
+			}
+			foundResources = append(foundResources, resources...)
+		}
 
-	queries := make(map[string]string)
-	queries["iframe"] = "src"
-	queries["svg"] = "src"
-	queries["object"] = "src"
-	queries["script"] = "src"
-
-	for t, a := range queries {
-		r := attrScrape(t, a, doc)
-		assetResources := canTakeover(r)
-		resources = append(resources, assetResources...)
+		if len(foundResources) > 0 {
+			loggedQueries.Lock()
+			loggedQueries.content[j.URL] = foundResources
+			loggedQueries.Unlock()
+		}
 	}
 
-	if *extractJS {
-		externalScriptLinks, inlineScriptCode := scrapeScripts(doc, j.url)
+	if j.LogInlineJS {
+		inlineScriptCode := scrapeScripts(doc)
 
 		if len(inlineScriptCode) > 0 {
-			allInlineScripts.Lock()
-			allInlineScripts.scripts[j.url] = inlineScriptCode
-			allInlineScripts.Unlock()
-		}
-
-		if len(externalScriptLinks) > 0 {
-			allExternalScripts.Lock()
-			allExternalScripts.scripts[j.url] = externalScriptLinks
-			allExternalScripts.Unlock()
+			loggedInlineJS.Lock()
+			loggedInlineJS.content[j.URL] = inlineScriptCode
+			loggedInlineJS.Unlock()
 		}
 	}
 
-	if len(resources) > 0 {
-		allResources.Lock()
-		allResources.resources[j.url] = resources
-		allResources.Unlock()
+	if j.LogNon200Queries != nil {
+		var foundResources []string
+		for t, a := range j.LogNon200Queries {
+			links := attrScrape(t, a, doc)
+			for _, link := range links {
+				absolute, _ := absURL(link, j.URL)
+				if isNon200(absolute, j.Headers, j.ExcludedStatusCodes, j.ExcludedURLRegex) {
+					foundResources = append(foundResources, absolute)
+				}
+			}
+		}
+
+		if len(foundResources) > 0 {
+			loggedNon200Queries.Lock()
+			loggedNon200Queries.content[j.URL] = foundResources
+			loggedNon200Queries.Unlock()
+		}
 	}
 
 	urls := attrScrape("a", "href", doc)
-	tovisit := toVisit(urls, j.url)
+	tovisit := toVisit(urls, j.URL)
 
-	fmt.Println(j.url)
+	fmt.Println(j.URL)
 
-	if j.depth <= 1 {
+	if j.Depth <= 1 {
 		return
 	}
 
 	wg.Add(len(tovisit))
 	for _, u := range tovisit {
-		q <- job{u, j.depth - 1}
+		q <- job{u, j.Headers, j.Depth - 1, j.LogQueries, j.LogURLRegex, j.LogNon200Queries, j.ExcludedURLRegex, j.ExcludedStatusCodes, j.LogInlineJS}
 	}
-
 }
 
-func httpGET(url string) (*http.Response, error) {
+func httpGET(url string, headers map[string]string) (*http.Response, error) {
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("could not create request for %s: %v", url, err)
-	}
-
-	for _, cookie := range cookies {
-		req.AddCookie(&cookie)
 	}
 
 	for key, value := range headers {
@@ -226,6 +249,18 @@ func httpGET(url string) (*http.Response, error) {
 	return res, nil
 }
 
+func writeResults(filename string, content map[string][]string) error {
+	JSON, err := json.Marshal(content)
+	if err != nil {
+		return fmt.Errorf("could not marshal the JSON object: %v", err)
+	}
+	err = ioutil.WriteFile(filepath.Join(*outdir, filename), JSON, 0644)
+	if err != nil {
+		return fmt.Errorf("coudln't write resources to JSON: %v", err)
+	}
+	return nil
+}
+
 func attrScrape(tag string, attr string, doc *goquery.Document) []string {
 	var results []string
 	doc.Find(tag).Each(func(index int, tag *goquery.Selection) {
@@ -237,20 +272,19 @@ func attrScrape(tag string, attr string, doc *goquery.Document) []string {
 	return results
 }
 
-func scrapeScripts(doc *goquery.Document, link string) ([]string, []string) {
-	var externalScripts []string
+func scrapeScripts(doc *goquery.Document) []string {
 	var inlineScripts []string
 
 	doc.Find("script").Each(func(index int, tag *goquery.Selection) {
-		attr, exists := tag.Attr("src")
-		if exists {
-			externalScripts = append(externalScripts, attr)
-		} else {
+		// check if the tag does not have a src attribute
+		// if it doesn't, assume it's an inline script
+		_, exists := tag.Attr("src")
+		if !exists {
 			inlineScripts = append(inlineScripts, tag.Text())
 		}
 	})
 
-	return externalScripts, inlineScripts
+	return inlineScripts
 }
 
 func checkOrigin(link, base string) bool {
@@ -300,25 +334,52 @@ func toVisit(urls []string, base string) []string {
 	return tovisit
 }
 
-func canTakeoverLink(link string) bool {
-	// TODO: Check if the subdomains are not connected to an account
-	providers := []string{"s3.amazon.com", "wufoo.com"}
-	for i := range providers {
-		providerused, _ := regexp.MatchString(providers[i], link)
-		if providerused {
+func matchURLRegexLink(link string, regex []string) bool {
+	for _, re := range regex {
+		matches, _ := regexp.MatchString(re, link)
+		if matches {
 			return true
 		}
 	}
 	return false
 }
 
-func canTakeover(links []string) []string {
+func matchURLRegex(links []string, regex []string) []string {
 	var results []string
 	for i := range links {
-		cantakeover := canTakeoverLink(links[i])
-		if cantakeover {
+		matches := matchURLRegexLink(links[i], regex)
+		if matches {
 			results = append(results, links[i])
 		}
 	}
 	return results
+}
+
+func isNon200(link string, headers map[string]string, excludedStatusCodes []int, excludedURLRegex []string) bool {
+	// check if the link matches any excluded regex
+	for _, regex := range excludedURLRegex {
+		matches, _ := regexp.MatchString(regex, link)
+		if matches {
+			return false
+		}
+	}
+
+	res, err := httpGET(link, headers)
+
+	// check if the link doesn't respond properly
+	if err != nil {
+		return false
+	}
+
+	if res.StatusCode == 200 {
+		return false
+	}
+
+	// check if the link responds with an excluded status code
+	for _, code := range excludedStatusCodes {
+		if res.StatusCode == code {
+			return false
+		}
+	}
+	return true
 }
