@@ -18,6 +18,9 @@
 
     "LogNon200Queries": {
         "a": "href",
+        "iframe": "src",
+        "svg": "src",
+        "object": "src",
         "script": "src"
     },
     "ExcludedURLRegex": ["linkedin.com", "youtube.com"],
