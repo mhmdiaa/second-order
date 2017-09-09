@@ -61,7 +61,7 @@ var loggedInlineJS = struct {
 
 var (
 	base       = flag.String("base", "http://127.0.0.1", "Base link to start scraping from")
-	configFile = flag.String("config", "config.json", "Config file")
+	configFile = flag.String("config", "config.json", "Configuration file")
 	outdir     = flag.String("output", "output", "Directory to save results in")
 )
 
