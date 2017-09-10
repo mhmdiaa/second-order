@@ -27,7 +27,7 @@ This will download the code, compile it, and leave a `second-order` binary in $G
 - `LogQueries`: A map of tag-attribute queries that will be searched for in crawled pages. For example, `"a": "href"` means log every `href` attribute of every `a` tag.
 - `LogURLRegex`: A list of regular expressions that will be matched against the URLs that are extracted using the queries in `LogQueries`; if left empty, all URLs will be logged.
 - `LogNon200Queries`: A map of tag-attribute queries that will be searched for in crawled pages, and logged only if they don't return a `200` status code.
-- `ExcludedURLRegex`: A list of regular expressions whose matching URLs will be excluded from the results of `LogNon200Queries`; if left empty, all URLs will be checked.
+- `ExcludedURLRegex`: A list of regular expressions whose matching URLs will not be accessed by the tool.
 - `ExcludedStatusCodes`: A list of status codes; if any page responds with one of these, it will be excluded from the results of `LogNon200Queries`; if left empty, all non-200 pages' URLs will be logged.
 - `LogInlineJS`: If this is set to true, Second Order will log the contents of every `script` tag that doesn't have a `src` attribute.
 
