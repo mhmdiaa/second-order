@@ -327,6 +327,9 @@ func toVisit(urls []string, base string) []string {
 		if !(strings.HasPrefix(absolute, "http://") || strings.HasPrefix(absolute, "https://")) {
 			continue
 		}
+		if !matchURLRegexLink(u, config.ExcludedURLRegex) {
+			continue
+		}
 		if checkOrigin(absolute, base) {
 			tovisit = append(tovisit, absolute)
 		}
