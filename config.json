@@ -6,7 +6,7 @@
 
     "Depth": 5,
 
-    "LogCrawledURLs": true,
+    "LogCrawledURLs": false,
 
     "LogQueries": {
         "iframe": "src",
@@ -24,7 +24,7 @@
         "script": "src"
     },
     "ExcludedURLRegex": ["linkedin.com", "youtube.com"],
-    "ExcludedStatusCodes": [401, 403],
+    "ExcludedStatusCodes": [401, 403, 429, 599],
 
     "LogInlineJS": true
 }
