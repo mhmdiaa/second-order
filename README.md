@@ -11,6 +11,10 @@ This will download the code, compile it, and leave a `second-order` binary in $G
 
 ### Usage
 ```
+  go run second-order.go -base https://example.com -config config.json -output example.com
+  
+  Where: 
+
   -base string
         Base link to start scraping from (default "http://127.0.0.1")
   -config string
