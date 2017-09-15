@@ -216,7 +216,7 @@ func crawl(j job, q chan job, wg *sync.WaitGroup) {
 	}
 
 	urls := attrScrape("a", "href", doc)
-	tovisit := toVisit(urls, j.URL)
+	tovisit := toVisit(urls, j.URL, j.ExcludedURLRegex)
 
 	fmt.Println(j.URL)
 
@@ -316,7 +316,7 @@ func absURL(href, base string) (string, error) {
 	return url.String(), nil
 }
 
-func toVisit(urls []string, base string) []string {
+func toVisit(urls []string, base string, excludedRegex []string) []string {
 	var tovisit []string
 	for _, u := range urls {
 		absolute, err := absURL(u, base)
@@ -327,7 +327,7 @@ func toVisit(urls []string, base string) []string {
 		if !(strings.HasPrefix(absolute, "http://") || strings.HasPrefix(absolute, "https://")) {
 			continue
 		}
-		if !matchURLRegexLink(u, config.ExcludedURLRegex) {
+		if matchURLRegexLink(u, excludedRegex) {
 			continue
 		}
 		if checkOrigin(absolute, base) {
@@ -349,10 +349,10 @@ func matchURLRegexLink(link string, regex []string) bool {
 
 func matchURLRegex(links []string, regex []string) []string {
 	var results []string
-	for i := range links {
-		matches := matchURLRegexLink(links[i], regex)
+	for _, link := range links {
+		matches := matchURLRegexLink(link, regex)
 		if matches {
-			results = append(results, links[i])
+			results = append(results, link)
 		}
 	}
 	return results
