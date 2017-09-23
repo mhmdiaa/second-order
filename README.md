@@ -3,24 +3,25 @@
 Scans web applications for second-order subdomain takeover by crawling the app, and collecting URLs (and other data) that match some specific rules, or respond in a specific way.
 
 ### Installation
-Go is required.
+Go version >= 1.8 is required.
 ```
 go get github.com/mhmdiaa/second-order
 ```
 This will download the code, compile it, and leave a `second-order` binary in $GOPATH/bin.
 
-### Usage
+### Command line options
 ```
-  go run second-order.go -base https://example.com -config config.json -output example.com
-  
-  Where: 
-
   -base string
         Base link to start scraping from (default "http://127.0.0.1")
   -config string
         Configuration file (default "config.json")
   -output string
         Directory to save results in (default "output")
+```
+
+### Example
+```
+go run second-order.go -base https://example.com -config config.json -output example.com
 ```
 
 ### Configuration File
