@@ -22,7 +22,7 @@ import (
 type Configuration struct {
 	Headers             map[string]string
 	Depth               int
-	LogCrawledURLs      bool
+	LogstartCrawledURLs bool
 	LogQueries          map[string]string
 	LogURLRegex         []string
 	LogNon200Queries    map[string]string
@@ -60,10 +60,11 @@ var loggedInlineJS = struct {
 }{content: make(map[string][]string)}
 
 var (
-	base       = flag.String("base", "http://127.0.0.1", "Base link to start scraping from")
-	configFile = flag.String("config", "config.json", "Configuration file")
-	outdir     = flag.String("output", "output", "Directory to save results in")
-	debug      = flag.Bool("debug", false, "Print visited links in real-time to stdout")
+	base        = flag.String("base", "http://127.0.0.1", "Base link to start scraping from")
+	configFile  = flag.String("config", "config.json", "Configuration file")
+	outdir      = flag.String("output", "output", "Directory to save results in")
+	concurrency = flag.Int("concurrency", 1, "Maximum number of concurrent requests")
+	debug       = flag.Bool("debug", false, "Print visited links in real-time to stdout")
 )
 
 var seen = make(map[string]bool)
@@ -107,7 +108,7 @@ func main() {
 			log.Printf("Error writing non-200 query results: %v", err)
 		}
 	}
-	if config.LogCrawledURLs {
+	if config.LogstartCrawledURLs {
 		URLs := []string{}
 		for u := range seen {
 			URLs = append(URLs, u)
@@ -138,42 +139,49 @@ func getConfigFile(location string) (Configuration, error) {
 }
 
 func dedup(ch chan job, wg *sync.WaitGroup) {
-
 	for j := range ch {
 		if seen[j.URL] || j.Depth <= 0 {
 			wg.Done()
 			continue
 		}
 		seen[j.URL] = true
-		go crawl(j, ch, wg)
+		wg.Add(1)
+		go startCrawl(j, ch, wg)
 	}
 }
 
-func crawl(j job, q chan job, wg *sync.WaitGroup) {
+func startCrawl(j job, q chan job, wg *sync.WaitGroup) {
 	defer wg.Done()
 
+	links, err := crawl(j)
+	if err != nil {
+		log.Println(err)
+	}
+	for _, l := range links {
+		q <- job{l, j.Headers, j.Depth - 1, j.LogQueries, j.LogURLRegex, j.LogNon200Queries, j.ExcludedURLRegex, j.ExcludedStatusCodes, j.LogInlineJS}
+	}
+}
+
+func crawl(j job) ([]string, error) {
 	res, err := httpGET(j.URL, j.Headers)
 	if err != nil {
-		log.Print(err)
-		return
+		return nil, err
 	}
 
 	if res.StatusCode == http.StatusTooManyRequests {
-		log.Printf("you are being rate limited")
-		return
+		return nil, fmt.Errorf("you are being rate limited")
 	}
 
 	doc, err := goquery.NewDocumentFromReader(res.Body)
 	if err != nil {
-		log.Printf("could not parse page: %v", err)
-		return
+		return nil, fmt.Errorf("could not parse page: %v", err)
 	}
 	res.Body.Close()
 
 	if j.LogQueries != nil {
 		var foundResources []string
 		for t, a := range j.LogQueries {
-			resources := attrScrape(t, a, doc)
+			resources := attrcrawl(t, a, doc)
 			if j.LogURLRegex != nil {
 				resources = matchURLRegex(resources, j.LogURLRegex)
 			}
@@ -188,7 +196,7 @@ func crawl(j job, q chan job, wg *sync.WaitGroup) {
 	}
 
 	if j.LogInlineJS {
-		inlineScriptCode := scrapeScripts(doc)
+		inlineScriptCode := crawlScripts(doc)
 
 		if len(inlineScriptCode) > 0 {
 			loggedInlineJS.Lock()
@@ -200,7 +208,7 @@ func crawl(j job, q chan job, wg *sync.WaitGroup) {
 	if j.LogNon200Queries != nil {
 		var foundResources []string
 		for t, a := range j.LogNon200Queries {
-			links := attrScrape(t, a, doc)
+			links := attrcrawl(t, a, doc)
 			for _, link := range links {
 				absolute, _ := absURL(link, j.URL)
 				if isNon200(absolute, j.Headers, j.ExcludedStatusCodes, j.ExcludedURLRegex) {
@@ -216,21 +224,17 @@ func crawl(j job, q chan job, wg *sync.WaitGroup) {
 		}
 	}
 
-	urls := attrScrape("a", "href", doc)
-	tovisit := toVisit(urls, j.URL, j.ExcludedURLRegex)
-
 	if *debug {
 		fmt.Println(j.URL)
 	}
 
 	if j.Depth <= 1 {
-		return
+		return nil, fmt.Errorf("reached maximum depth")
 	}
 
-	wg.Add(len(tovisit))
-	for _, u := range tovisit {
-		q <- job{u, j.Headers, j.Depth - 1, j.LogQueries, j.LogURLRegex, j.LogNon200Queries, j.ExcludedURLRegex, j.ExcludedStatusCodes, j.LogInlineJS}
-	}
+	urls := attrcrawl("a", "href", doc)
+	tovisit := toVisit(urls, j.URL, j.ExcludedURLRegex)
+	return tovisit, nil
 }
 
 func httpGET(url string, headers map[string]string) (*http.Response, error) {
@@ -264,7 +268,7 @@ func writeResults(filename string, content map[string][]string) error {
 	return nil
 }
 
-func attrScrape(tag string, attr string, doc *goquery.Document) []string {
+func attrcrawl(tag string, attr string, doc *goquery.Document) []string {
 	var results []string
 	doc.Find(tag).Each(func(index int, tag *goquery.Selection) {
 		attr, exists := tag.Attr(attr)
@@ -275,7 +279,7 @@ func attrScrape(tag string, attr string, doc *goquery.Document) []string {
 	return results
 }
 
-func scrapeScripts(doc *goquery.Document) []string {
+func crawlScripts(doc *goquery.Document) []string {
 	var inlineScripts []string
 
 	doc.Find("script").Each(func(index int, tag *goquery.Selection) {
