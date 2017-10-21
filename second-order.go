@@ -63,6 +63,7 @@ var (
 	base       = flag.String("base", "http://127.0.0.1", "Base link to start scraping from")
 	configFile = flag.String("config", "config.json", "Configuration file")
 	outdir     = flag.String("output", "output", "Directory to save results in")
+	debug      = flag.Bool("debug", false, "Print visited links in real-time to stdout")
 )
 
 var seen = make(map[string]bool)
@@ -218,7 +219,9 @@ func crawl(j job, q chan job, wg *sync.WaitGroup) {
 	urls := attrScrape("a", "href", doc)
 	tovisit := toVisit(urls, j.URL, j.ExcludedURLRegex)
 
-	fmt.Println(j.URL)
+	if *debug {
+		fmt.Println(j.URL)
+	}
 
 	if j.Depth <= 1 {
 		return
