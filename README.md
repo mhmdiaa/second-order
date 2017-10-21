@@ -11,17 +11,21 @@ This will download the code, compile it, and leave a `second-order` binary in $G
 
 ### Command line options
 ```
-  -base string
-        Base link to start scraping from (default "http://127.0.0.1")
-  -config string
-        Configuration file (default "config.json")
-  -output string
-        Directory to save results in (default "output")
+ -base string
+       Base link to start scraping from (default "http://127.0.0.1")
+ -concurrency int
+       Maximum number of concurrent requests (default 1)
+ -config string
+       Configuration file (default "config.json")
+ -debug
+       Print visited links in real-time to stdout
+ -output string
+       Directory to save results in (default "output")
 ```
 
 ### Example
 ```
-go run second-order.go -base https://example.com -config config.json -output example.com
+go run second-order.go -base https://example.com -config config.json -output example.com -concurrency 10
 ```
 
 ### Configuration File
