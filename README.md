@@ -13,8 +13,6 @@ This will download the code, compile it, and leave a `second-order` binary in $G
 ```
  -base string
        Base link to start scraping from (default "http://127.0.0.1")
- -concurrency int
-       Maximum number of concurrent requests (default 1)
  -config string
        Configuration file (default "config.json")
  -debug
