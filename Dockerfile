@@ -1,4 +1,7 @@
-FROM golang:1.8-onbuild
-MAINTAINER Mohammed Diaa <mohammeddiaa2000@gmail.com>
+FROM golang:alpine
+WORKDIR /go/src/github.com/mhmdiaa/second-order
+COPY . .
+RUN apk --no-cache add git \
+    && go get -u github.com/mhmdiaa/second-order
 
-ENTRYPOINT ["app"]
+ENTRYPOINT ["go", "run", "second-order.go"]
