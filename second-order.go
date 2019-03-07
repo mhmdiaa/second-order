@@ -245,13 +245,13 @@ func httpGET(url string, headers map[string]string) (*http.Response, error) {
 		req.Header.Add(key, value)
 	}
 
+    client := &http.Client{}
+
     if *insecure {
         tr := &http.Transport{
             TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
         }
-        client := &http.Client{Transport: tr}
-    } else {
-        client := &http.Client{}
+        client = &http.Client{Transport: tr}
     }
 
 	res, err := client.Do(req)
