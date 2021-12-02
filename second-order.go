@@ -1,6 +1,7 @@
 package main
 
 import (
+    "crypto/tls"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -64,6 +65,7 @@ var (
 	configFile = flag.String("config", "config.json", "Configuration file")
 	outdir     = flag.String("output", "output", "Directory to save results in")
 	debug      = flag.Bool("debug", false, "Print visited links in real-time to stdout")
+    insecure   = flag.Bool("insecure", false, "Accept untrusted SSL/TLS certificates")
 )
 
 var seen = make(map[string]bool)
@@ -243,7 +245,14 @@ func httpGET(url string, headers map[string]string) (*http.Response, error) {
 		req.Header.Add(key, value)
 	}
 
-	client := &http.Client{}
+    client := &http.Client{}
+
+    if *insecure {
+        tr := &http.Transport{
+            TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+        }
+        client = &http.Client{Transport: tr}
+    }
 
 	res, err := client.Do(req)
 	if err != nil {
