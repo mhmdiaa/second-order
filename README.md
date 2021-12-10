@@ -33,11 +33,6 @@ docker pull mhmdiaa/second-order
         Number of threads (default 10)
 ```
 
-## Example
-```
-go run second-order.go -base https://example.com -config config.json -output example.com -concurrency 10
-```
-
 ## Configuration File
 **Example configuration files are in [config](/config/)**
 - `Headers`: A map of headers that will be sent with every request.
@@ -71,6 +66,7 @@ All results are saved in JSON files that specify what and where data was found
 }
 ```
 - The results of `LogInline` are saved in `inline.json`
+```
 {
     "https://example.com/": {
         "title": [
@@ -83,6 +79,7 @@ All results are saved in JSON files that specify what and where data was found
         ]
     }
 }
+```
 
 ## Usage Ideas
 This is a list of tips and ideas (not necessarily related to second-order subdomain takeover) on what to use Second Order for.
