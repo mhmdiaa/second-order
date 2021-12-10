@@ -23,10 +23,7 @@ import (
 // the target is specified in a flag so we don't have to edit the configuration file every time we run the tool
 type Configuration struct {
 	Headers          map[string]string
-	Depth            int
-	LogCrawledURLs   bool
 	LogQueries       map[string]string
-	LogURLRegex      []string
 	LogNon200Queries map[string]string
 	LogInline        []string
 }
