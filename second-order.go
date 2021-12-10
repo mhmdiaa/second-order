@@ -49,7 +49,7 @@ var loggedInline = struct {
 
 var (
 	target     = flag.String("target", "", "Target URL")
-	configFile = flag.String("config", "config.json", "Configuration file")
+	configFile = flag.String("config", "", "Configuration file")
 	outdir     = flag.String("output", "output", "Directory to save results in")
 	insecure   = flag.Bool("insecure", false, "Accept untrusted SSL/TLS certificates")
 	depth      = flag.Int("depth", 1, "Depth to crawl")
@@ -58,8 +58,8 @@ var (
 
 func main() {
 	flag.Parse()
-	if *target == "" {
-		fmt.Println("[*] Target is required")
+	if *target == "" || *configFile == "" {
+		fmt.Println("[*] You need to specify a target and a config file")
 		flag.PrintDefaults()
 		os.Exit(1)
 	}
