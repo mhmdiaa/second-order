@@ -6,8 +6,6 @@
 
     "Depth": 5,
 
-    "LogCrawledURLs": false,
-
     "LogQueries": {
         "iframe": "src",
         "svg": "src",

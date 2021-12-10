@@ -1,7 +1,7 @@
 package main
 
 import (
-    "crypto/tls"
+	"crypto/tls"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -16,6 +16,7 @@ import (
 	"sync"
 
 	"github.com/PuerkitoBio/goquery"
+	"github.com/gocolly/colly/v2"
 )
 
 // Configuration holds all the data passed from the config file
@@ -61,14 +62,14 @@ var loggedInlineJS = struct {
 }{content: make(map[string][]string)}
 
 var (
-	base       = flag.String("base", "http://127.0.0.1", "Base link to start scraping from")
+	target     = flag.String("target", "http://127.0.0.1", "Target URL")
 	configFile = flag.String("config", "config.json", "Configuration file")
 	outdir     = flag.String("output", "output", "Directory to save results in")
 	debug      = flag.Bool("debug", false, "Print visited links in real-time to stdout")
-    insecure   = flag.Bool("insecure", false, "Accept untrusted SSL/TLS certificates")
+	insecure   = flag.Bool("insecure", false, "Accept untrusted SSL/TLS certificates")
+	depth      = flag.Int("depth", 2, "Depth to crawl")
+	threads    = flag.Int("threads", 10, "Number of threads")
 )
-
-var seen = make(map[string]bool)
 
 // store configuration in a global variable accessible to all functions so we don't have to pass it around all the time
 var config Configuration
@@ -76,18 +77,58 @@ var config Configuration
 func main() {
 	flag.Parse()
 
-	wg := new(sync.WaitGroup)
-	wg.Add(1)
-
 	config, err := getConfigFile(*configFile)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	q := make(chan job)
-	go dedup(q, wg)
-	q <- job{*base, config.Headers, config.Depth, config.LogQueries, config.LogURLRegex, config.LogNon200Queries, config.ExcludedURLRegex, config.ExcludedStatusCodes, config.LogInlineJS}
-	wg.Wait()
+	hostname, err := getHostname(*target)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Target URL is invalid: %v", err)
+		os.Exit(1)
+	}
+
+	// Instantiate default collector
+	c := colly.NewCollector(
+		colly.MaxDepth(*depth),
+		colly.Async(),
+	)
+	c.Limit(&colly.LimitRule{DomainGlob: "*", Parallelism: *threads})
+
+	// Allow URLs from the same domain and its subdomains
+	c.URLFilters = []*regexp.Regexp{
+		regexp.MustCompile(".*" + strings.ReplaceAll(hostname, ".", "\\.") + ".*"),
+	}
+
+	// Add headers
+	c.OnRequest(func(r *colly.Request) {
+		for header, value := range config.Headers {
+			r.Headers.Set(header, value)
+		}
+	})
+
+	// Accept untrusted SSL/TLS certificates based on the value of `-insecure` flag
+	c.WithTransport(&http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: *insecure},
+	})
+
+	// On every a element which has href attribute call callback
+	c.OnHTML("a[href]", func(e *colly.HTMLElement) {
+		link := e.Attr("href")
+
+		// Print link if it's in-scope
+		if checkOrigin(link, *target) {
+			fmt.Println(link)
+		}
+
+		// Visit link found on page on a new thread
+		e.Request.Visit(link)
+	})
+
+	// Start scraping
+	c.Visit(*target)
+	// Wait until threads are finished
+	c.Wait()
 
 	os.MkdirAll(*outdir, os.ModePerm)
 
@@ -109,17 +150,6 @@ func main() {
 			log.Printf("Error writing non-200 query results: %v", err)
 		}
 	}
-	if config.LogCrawledURLs {
-		URLs := []string{}
-		for u := range seen {
-			URLs = append(URLs, u)
-		}
-		l := strings.Join(URLs, "\n")
-		err = ioutil.WriteFile(filepath.Join(*outdir, "log.txt"), []byte(l), 0644)
-		if err != nil {
-			log.Printf("couldn't write to URL log: %v", err)
-		}
-	}
 }
 
 func getConfigFile(location string) (Configuration, error) {
@@ -137,18 +167,6 @@ func getConfigFile(location string) (Configuration, error) {
 	}
 
 	return config, nil
-}
-
-func dedup(ch chan job, wg *sync.WaitGroup) {
-
-	for j := range ch {
-		if seen[j.URL] || j.Depth <= 0 {
-			wg.Done()
-			continue
-		}
-		seen[j.URL] = true
-		go crawl(j, ch, wg)
-	}
 }
 
 func crawl(j job, q chan job, wg *sync.WaitGroup) {
@@ -245,14 +263,14 @@ func httpGET(url string, headers map[string]string) (*http.Response, error) {
 		req.Header.Add(key, value)
 	}
 
-    client := &http.Client{}
+	client := &http.Client{}
 
-    if *insecure {
-        tr := &http.Transport{
-            TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-        }
-        client = &http.Client{Transport: tr}
-    }
+	if *insecure {
+		tr := &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		}
+		client = &http.Client{Transport: tr}
+	}
 
 	res, err := client.Do(req)
 	if err != nil {
@@ -299,11 +317,26 @@ func scrapeScripts(doc *goquery.Document) []string {
 	return inlineScripts
 }
 
+func getHostname(rawURL string) (string, error) {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return "", err
+	}
+	return u.Hostname(), nil
+}
+
 func checkOrigin(link, base string) bool {
-	linkurl, _ := url.Parse(link)
+	linkurl, err := url.Parse(link)
+	if err != nil {
+		return false
+	}
+
 	linkhost := linkurl.Hostname()
 
-	baseURL, _ := url.Parse(base)
+	baseURL, err := url.Parse(base)
+	if err != nil {
+		return false
+	}
 	basehost := baseURL.Hostname()
 
 	// check the main domain not the subdomain
