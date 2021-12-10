@@ -48,7 +48,7 @@ var loggedInline = struct {
 }{content: make(map[string]map[string][]string)}
 
 var (
-	target     = flag.String("target", "http://127.0.0.1", "Target URL")
+	target     = flag.String("target", "", "Target URL")
 	configFile = flag.String("config", "config.json", "Configuration file")
 	outdir     = flag.String("output", "output", "Directory to save results in")
 	insecure   = flag.Bool("insecure", false, "Accept untrusted SSL/TLS certificates")
@@ -58,6 +58,11 @@ var (
 
 func main() {
 	flag.Parse()
+	if *target == "" {
+		fmt.Println("[*] Target is required")
+		flag.PrintDefaults()
+		os.Exit(1)
+	}
 
 	config, err := getConfigFile(*configFile)
 	if err != nil {
