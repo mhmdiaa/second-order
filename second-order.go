@@ -15,7 +15,6 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/PuerkitoBio/goquery"
 	"github.com/gocolly/colly/v2"
 )
 
@@ -29,18 +28,6 @@ type Configuration struct {
 	LogURLRegex      []string
 	LogNon200Queries map[string]string
 	LogInline        []string
-}
-
-type job struct {
-	URL                 string
-	Headers             map[string]string
-	Depth               int
-	LogQueries          map[string]string
-	LogURLRegex         []string
-	LogNon200Queries    map[string]string
-	ExcludedURLRegex    []string
-	ExcludedStatusCodes []int
-	LogInlineJS         bool
 }
 
 // global variables to store the gathered info
@@ -67,9 +54,6 @@ var (
 	depth      = flag.Int("depth", 1, "Depth to crawl")
 	threads    = flag.Int("threads", 10, "Number of threads")
 )
-
-// store configuration in a global variable accessible to all functions so we don't have to pass it around all the time
-var config Configuration
 
 func main() {
 	flag.Parse()
@@ -228,116 +212,6 @@ func unpackQuerySelector(q string) (string, string) {
 	return tag, attribute
 }
 
-// func crawl(j job, q chan job, wg *sync.WaitGroup) {
-// 	defer wg.Done()
-
-// 	res, err := httpGET(j.URL, j.Headers)
-// 	if err != nil {
-// 		log.Print(err)
-// 		return
-// 	}
-
-// 	if res.StatusCode == http.StatusTooManyRequests {
-// 		log.Printf("you are being rate limited")
-// 		return
-// 	}
-
-// 	doc, err := goquery.NewDocumentFromReader(res.Body)
-// 	if err != nil {
-// 		log.Printf("could not parse page: %v", err)
-// 		return
-// 	}
-// 	res.Body.Close()
-
-// 	if j.LogQueries != nil {
-// 		var foundResources []string
-// 		for t, a := range j.LogQueries {
-// 			resources := attrScrape(t, a, doc)
-// 			if j.LogURLRegex != nil {
-// 				resources = matchURLRegex(resources, j.LogURLRegex)
-// 			}
-// 			foundResources = append(foundResources, resources...)
-// 		}
-
-// 		if len(foundResources) > 0 {
-// 			loggedQueries.Lock()
-// 			loggedQueries.content[j.URL] = foundResources
-// 			loggedQueries.Unlock()
-// 		}
-// 	}
-
-// 	if j.LogInlineJS {
-// 		inlineScriptCode := scrapeScripts(doc)
-
-// 		if len(inlineScriptCode) > 0 {
-// 			loggedInlineJS.Lock()
-// 			loggedInlineJS.content[j.URL] = inlineScriptCode
-// 			loggedInlineJS.Unlock()
-// 		}
-// 	}
-
-// 	if j.LogNon200Queries != nil {
-// 		var foundResources []string
-// 		for t, a := range j.LogNon200Queries {
-// 			links := attrScrape(t, a, doc)
-// 			for _, link := range links {
-// 				absolute, _ := absURL(link, j.URL)
-// 				if isNon200(absolute, j.Headers, j.ExcludedStatusCodes, j.ExcludedURLRegex) {
-// 					foundResources = append(foundResources, absolute)
-// 				}
-// 			}
-// 		}
-
-// 		if len(foundResources) > 0 {
-// 			loggedNon200Queries.Lock()
-// 			loggedNon200Queries.content[j.URL] = foundResources
-// 			loggedNon200Queries.Unlock()
-// 		}
-// 	}
-
-// 	urls := attrScrape("a", "href", doc)
-// 	tovisit := toVisit(urls, j.URL, j.ExcludedURLRegex)
-
-// 	if *debug {
-// 		fmt.Println(j.URL)
-// 	}
-
-// 	if j.Depth <= 1 {
-// 		return
-// 	}
-
-// 	wg.Add(len(tovisit))
-// 	for _, u := range tovisit {
-// 		q <- job{u, j.Headers, j.Depth - 1, j.LogQueries, j.LogURLRegex, j.LogNon200Queries, j.ExcludedURLRegex, j.ExcludedStatusCodes, j.LogInlineJS}
-// 	}
-// }
-
-func httpGET(url string, headers map[string]string) (*http.Response, error) {
-	req, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		return nil, fmt.Errorf("could not create request for %s: %v", url, err)
-	}
-
-	for key, value := range headers {
-		req.Header.Add(key, value)
-	}
-
-	client := &http.Client{}
-
-	if *insecure {
-		tr := &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-		}
-		client = &http.Client{Transport: tr}
-	}
-
-	res, err := client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("could not request %s: %v", url, err)
-	}
-	return res, nil
-}
-
 func writeResults(filename string, content map[string]map[string][]string) error {
 	JSON, err := json.Marshal(content)
 	if err != nil {
@@ -348,32 +222,6 @@ func writeResults(filename string, content map[string]map[string][]string) error
 		return fmt.Errorf("coudln't write resources to JSON: %v", err)
 	}
 	return nil
-}
-
-func attrScrape(tag string, attr string, doc *goquery.Document) []string {
-	var results []string
-	doc.Find(tag).Each(func(index int, tag *goquery.Selection) {
-		attr, exists := tag.Attr(attr)
-		if exists {
-			results = append(results, attr)
-		}
-	})
-	return results
-}
-
-func scrapeScripts(doc *goquery.Document) []string {
-	var inlineScripts []string
-
-	doc.Find("script").Each(func(index int, tag *goquery.Selection) {
-		// check if the tag does not have a src attribute
-		// if it doesn't, assume it's an inline script
-		_, exists := tag.Attr("src")
-		if !exists {
-			inlineScripts = append(inlineScripts, tag.Text())
-		}
-	})
-
-	return inlineScripts
 }
 
 func getHostname(rawURL string) (string, error) {
@@ -400,66 +248,8 @@ func checkOrigin(link, base string) bool {
 
 	// check the main domain not the subdomain
 	// checkOrigin ("https://docs.google.com", "https://mail.google.com") => true
-	re, _ := regexp.Compile("[\\w-]*\\.[\\w]*$")
-	if re.FindString(linkhost) == re.FindString(basehost) {
-		return true
-	}
-	return false
-}
-
-func absURL(href, base string) (string, error) {
-	url, err := url.Parse(href)
-	if err != nil {
-		return "", fmt.Errorf("couldn't parse URL: %v", err)
-	}
-	baseURL, err := url.Parse(base)
-	if err != nil {
-		return "", fmt.Errorf("couldn't parse URL: %v", err)
-	}
-	url = baseURL.ResolveReference(url)
-	return url.String(), nil
-}
-
-func toVisit(urls []string, base string, excludedRegex []string) []string {
-	var tovisit []string
-	for _, u := range urls {
-		absolute, err := absURL(u, base)
-		if err != nil {
-			log.Printf("couldn't parse URL: %v", err)
-			continue
-		}
-		if !(strings.HasPrefix(absolute, "http://") || strings.HasPrefix(absolute, "https://")) {
-			continue
-		}
-		if matchURLRegexLink(u, excludedRegex) {
-			continue
-		}
-		if checkOrigin(absolute, base) {
-			tovisit = append(tovisit, absolute)
-		}
-	}
-	return tovisit
-}
-
-func matchURLRegexLink(link string, regex []string) bool {
-	for _, re := range regex {
-		matches, _ := regexp.MatchString(re, link)
-		if matches {
-			return true
-		}
-	}
-	return false
-}
-
-func matchURLRegex(links []string, regex []string) []string {
-	var results []string
-	for _, link := range links {
-		matches := matchURLRegexLink(link, regex)
-		if matches {
-			results = append(results, link)
-		}
-	}
-	return results
+	re, _ := regexp.Compile(`[\w-]*\.[\w]*$`)
+	return re.FindString(linkhost) == re.FindString(basehost)
 }
 
 func isValidURL(s string) bool {

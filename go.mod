@@ -2,12 +2,10 @@ module github.com/mhmdiaa/second-order
 
 go 1.17
 
-require (
-	github.com/PuerkitoBio/goquery v1.8.0
-	github.com/gocolly/colly/v2 v2.1.0
-)
+require github.com/gocolly/colly/v2 v2.1.0
 
 require (
+	github.com/PuerkitoBio/goquery v1.8.0 // indirect
 	github.com/andybalholm/cascadia v1.3.1 // indirect
 	github.com/antchfx/htmlquery v1.2.3 // indirect
 	github.com/antchfx/xmlquery v1.2.4 // indirect
