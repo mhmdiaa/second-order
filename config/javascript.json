@@ -1,0 +1,8 @@
+{
+    "LogQueries": {
+        "script": "src"
+    },
+        "LogInline": [
+        "script"
+    ]
+}

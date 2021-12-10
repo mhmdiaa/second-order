@@ -1,0 +1,6 @@
+{
+    "Headers": {
+        "Header1": "value1",
+        "Cookie": "foo=bar"
+    }
+}

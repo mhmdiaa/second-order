@@ -1,0 +1,8 @@
+{
+    "LogNon200Queries": {       
+        "script": "src",
+        "iframe": "src",
+        "svg": "src",
+        "object": "src"
+    }
+}
