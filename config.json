@@ -21,8 +21,8 @@
         "object": "src",
         "script": "src"
     },
-    "ExcludedURLRegex": ["linkedin.com", "youtube.com"],
-    "ExcludedStatusCodes": [401, 403, 429, 599],
 
-    "LogInlineJS": true
+    "LogInline": [
+        "title"
+    ]
 }

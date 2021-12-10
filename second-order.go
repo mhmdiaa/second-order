@@ -22,15 +22,13 @@ import (
 // Configuration holds all the data passed from the config file
 // the target is specified in a flag so we don't have to edit the configuration file every time we run the tool
 type Configuration struct {
-	Headers             map[string]string
-	Depth               int
-	LogCrawledURLs      bool
-	LogQueries          map[string]string
-	LogURLRegex         []string
-	LogNon200Queries    map[string]string
-	ExcludedURLRegex    []string
-	ExcludedStatusCodes []int
-	LogInlineJS         bool
+	Headers          map[string]string
+	Depth            int
+	LogCrawledURLs   bool
+	LogQueries       map[string]string
+	LogURLRegex      []string
+	LogNon200Queries map[string]string
+	LogInline        []string
 }
 
 type job struct {
@@ -48,26 +46,25 @@ type job struct {
 // global variables to store the gathered info
 var loggedQueries = struct {
 	sync.RWMutex
-	content map[string][]string
-}{content: make(map[string][]string)}
+	content map[string]map[string][]string
+}{content: make(map[string]map[string][]string)}
 
 var loggedNon200Queries = struct {
 	sync.RWMutex
-	content map[string][]string
-}{content: make(map[string][]string)}
+	content map[string]map[string][]string
+}{content: make(map[string]map[string][]string)}
 
-var loggedInlineJS = struct {
+var loggedInline = struct {
 	sync.RWMutex
-	content map[string][]string
-}{content: make(map[string][]string)}
+	content map[string]map[string][]string
+}{content: make(map[string]map[string][]string)}
 
 var (
 	target     = flag.String("target", "http://127.0.0.1", "Target URL")
 	configFile = flag.String("config", "config.json", "Configuration file")
 	outdir     = flag.String("output", "output", "Directory to save results in")
-	debug      = flag.Bool("debug", false, "Print visited links in real-time to stdout")
 	insecure   = flag.Bool("insecure", false, "Accept untrusted SSL/TLS certificates")
-	depth      = flag.Int("depth", 2, "Depth to crawl")
+	depth      = flag.Int("depth", 1, "Depth to crawl")
 	threads    = flag.Int("threads", 10, "Number of threads")
 )
 
@@ -125,6 +122,55 @@ func main() {
 		e.Request.Visit(link)
 	})
 
+	// Register a function that logs HTML attributes
+	for tag, attribute := range config.LogQueries {
+		querySelector := createQuerySelector(tag, attribute)
+		c.OnHTML(querySelector, func(e *colly.HTMLElement) {
+			u := e.Request.URL.String()
+			_, attr := unpackQuerySelector(querySelector)
+			value := e.Attr(attr)
+			loggedQueries.Lock()
+			if _, ok := loggedQueries.content[u]; !ok {
+				loggedQueries.content[u] = make(map[string][]string)
+			}
+			loggedQueries.content[u][querySelector] = append(loggedQueries.content[u][querySelector], value)
+			loggedQueries.Unlock()
+		})
+	}
+
+	// Register a function that logs URLs from HTML attributes if they return a non-200 response code
+	for tag, attribute := range config.LogNon200Queries {
+		querySelector := createQuerySelector(tag, attribute)
+		c.OnHTML(querySelector, func(e *colly.HTMLElement) {
+			u := e.Request.URL.String()
+			_, attr := unpackQuerySelector(querySelector)
+			value := e.Attr(attr)
+
+			if isValidURL(value) && isNon200(value) {
+				loggedNon200Queries.Lock()
+				if _, ok := loggedNon200Queries.content[u]; !ok {
+					loggedNon200Queries.content[u] = make(map[string][]string)
+				}
+				loggedNon200Queries.content[u][querySelector] = append(loggedNon200Queries.content[u][querySelector], value)
+				loggedNon200Queries.Unlock()
+			}
+		})
+	}
+
+	for _, tag := range config.LogInline {
+		c.OnHTML(tag, func(e *colly.HTMLElement) {
+			u := e.Request.URL.String()
+			value := e.Text
+			loggedInline.Lock()
+			if _, ok := loggedInline.content[u]; !ok {
+				loggedInline.content[u] = make(map[string][]string)
+			}
+			loggedInline.content[u][tag] = append(loggedInline.content[u][tag], value)
+			loggedInline.Unlock()
+
+		})
+	}
+
 	// Start scraping
 	c.Visit(*target)
 	// Wait until threads are finished
@@ -133,21 +179,21 @@ func main() {
 	os.MkdirAll(*outdir, os.ModePerm)
 
 	if config.LogQueries != nil {
-		err = writeResults("logged-queries.json", loggedQueries.content)
+		err = writeResults("attributes.json", loggedQueries.content)
 		if err != nil {
-			log.Printf("Error writing query results: %v", err)
+			log.Printf("Error writing attributes: %v", err)
 		}
 	}
-	if config.LogInlineJS {
-		err = writeResults("inline-scripts.json", loggedInlineJS.content)
+	if config.LogInline != nil {
+		err = writeResults("inline.json", loggedInline.content)
 		if err != nil {
-			log.Printf("Error writing inline scripts: %v", err)
+			log.Printf("Error writing inline text: %v", err)
 		}
 	}
 	if config.LogNon200Queries != nil {
-		err = writeResults("logged-non-200-queries.json", loggedNon200Queries.content)
+		err = writeResults("non-200-url-attributes.json", loggedNon200Queries.content)
 		if err != nil {
-			log.Printf("Error writing non-200 query results: %v", err)
+			log.Printf("Error writing non-200 URL attributes: %v", err)
 		}
 	}
 }
@@ -169,89 +215,102 @@ func getConfigFile(location string) (Configuration, error) {
 	return config, nil
 }
 
-func crawl(j job, q chan job, wg *sync.WaitGroup) {
-	defer wg.Done()
-
-	res, err := httpGET(j.URL, j.Headers)
-	if err != nil {
-		log.Print(err)
-		return
-	}
-
-	if res.StatusCode == http.StatusTooManyRequests {
-		log.Printf("you are being rate limited")
-		return
-	}
-
-	doc, err := goquery.NewDocumentFromReader(res.Body)
-	if err != nil {
-		log.Printf("could not parse page: %v", err)
-		return
-	}
-	res.Body.Close()
-
-	if j.LogQueries != nil {
-		var foundResources []string
-		for t, a := range j.LogQueries {
-			resources := attrScrape(t, a, doc)
-			if j.LogURLRegex != nil {
-				resources = matchURLRegex(resources, j.LogURLRegex)
-			}
-			foundResources = append(foundResources, resources...)
-		}
-
-		if len(foundResources) > 0 {
-			loggedQueries.Lock()
-			loggedQueries.content[j.URL] = foundResources
-			loggedQueries.Unlock()
-		}
-	}
-
-	if j.LogInlineJS {
-		inlineScriptCode := scrapeScripts(doc)
-
-		if len(inlineScriptCode) > 0 {
-			loggedInlineJS.Lock()
-			loggedInlineJS.content[j.URL] = inlineScriptCode
-			loggedInlineJS.Unlock()
-		}
-	}
-
-	if j.LogNon200Queries != nil {
-		var foundResources []string
-		for t, a := range j.LogNon200Queries {
-			links := attrScrape(t, a, doc)
-			for _, link := range links {
-				absolute, _ := absURL(link, j.URL)
-				if isNon200(absolute, j.Headers, j.ExcludedStatusCodes, j.ExcludedURLRegex) {
-					foundResources = append(foundResources, absolute)
-				}
-			}
-		}
-
-		if len(foundResources) > 0 {
-			loggedNon200Queries.Lock()
-			loggedNon200Queries.content[j.URL] = foundResources
-			loggedNon200Queries.Unlock()
-		}
-	}
-
-	urls := attrScrape("a", "href", doc)
-	tovisit := toVisit(urls, j.URL, j.ExcludedURLRegex)
-
-	if *debug {
-		fmt.Println(j.URL)
-	}
-
-	if j.Depth <= 1 {
-		return
-	}
-
-	wg.Add(len(tovisit))
-	for _, u := range tovisit {
-		q <- job{u, j.Headers, j.Depth - 1, j.LogQueries, j.LogURLRegex, j.LogNon200Queries, j.ExcludedURLRegex, j.ExcludedStatusCodes, j.LogInlineJS}
-	}
+func createQuerySelector(tag, attribute string) string {
+	return fmt.Sprintf("%s[%s]", tag, attribute)
 }
+
+// a[href] -> a, href
+func unpackQuerySelector(q string) (string, string) {
+	parts := strings.Split(q, "[")
+	tag := parts[0]
+	attribute := strings.Trim(parts[1], "]")
+
+	return tag, attribute
+}
+
+// func crawl(j job, q chan job, wg *sync.WaitGroup) {
+// 	defer wg.Done()
+
+// 	res, err := httpGET(j.URL, j.Headers)
+// 	if err != nil {
+// 		log.Print(err)
+// 		return
+// 	}
+
+// 	if res.StatusCode == http.StatusTooManyRequests {
+// 		log.Printf("you are being rate limited")
+// 		return
+// 	}
+
+// 	doc, err := goquery.NewDocumentFromReader(res.Body)
+// 	if err != nil {
+// 		log.Printf("could not parse page: %v", err)
+// 		return
+// 	}
+// 	res.Body.Close()
+
+// 	if j.LogQueries != nil {
+// 		var foundResources []string
+// 		for t, a := range j.LogQueries {
+// 			resources := attrScrape(t, a, doc)
+// 			if j.LogURLRegex != nil {
+// 				resources = matchURLRegex(resources, j.LogURLRegex)
+// 			}
+// 			foundResources = append(foundResources, resources...)
+// 		}
+
+// 		if len(foundResources) > 0 {
+// 			loggedQueries.Lock()
+// 			loggedQueries.content[j.URL] = foundResources
+// 			loggedQueries.Unlock()
+// 		}
+// 	}
+
+// 	if j.LogInlineJS {
+// 		inlineScriptCode := scrapeScripts(doc)
+
+// 		if len(inlineScriptCode) > 0 {
+// 			loggedInlineJS.Lock()
+// 			loggedInlineJS.content[j.URL] = inlineScriptCode
+// 			loggedInlineJS.Unlock()
+// 		}
+// 	}
+
+// 	if j.LogNon200Queries != nil {
+// 		var foundResources []string
+// 		for t, a := range j.LogNon200Queries {
+// 			links := attrScrape(t, a, doc)
+// 			for _, link := range links {
+// 				absolute, _ := absURL(link, j.URL)
+// 				if isNon200(absolute, j.Headers, j.ExcludedStatusCodes, j.ExcludedURLRegex) {
+// 					foundResources = append(foundResources, absolute)
+// 				}
+// 			}
+// 		}
+
+// 		if len(foundResources) > 0 {
+// 			loggedNon200Queries.Lock()
+// 			loggedNon200Queries.content[j.URL] = foundResources
+// 			loggedNon200Queries.Unlock()
+// 		}
+// 	}
+
+// 	urls := attrScrape("a", "href", doc)
+// 	tovisit := toVisit(urls, j.URL, j.ExcludedURLRegex)
+
+// 	if *debug {
+// 		fmt.Println(j.URL)
+// 	}
+
+// 	if j.Depth <= 1 {
+// 		return
+// 	}
+
+// 	wg.Add(len(tovisit))
+// 	for _, u := range tovisit {
+// 		q <- job{u, j.Headers, j.Depth - 1, j.LogQueries, j.LogURLRegex, j.LogNon200Queries, j.ExcludedURLRegex, j.ExcludedStatusCodes, j.LogInlineJS}
+// 	}
+// }
 
 func httpGET(url string, headers map[string]string) (*http.Response, error) {
 	req, err := http.NewRequest("GET", url, nil)
@@ -279,7 +338,7 @@ func httpGET(url string, headers map[string]string) (*http.Response, error) {
 	return res, nil
 }
 
-func writeResults(filename string, content map[string][]string) error {
+func writeResults(filename string, content map[string]map[string][]string) error {
 	JSON, err := json.Marshal(content)
 	if err != nil {
 		return fmt.Errorf("could not marshal the JSON object: %v", err)
@@ -403,31 +462,26 @@ func matchURLRegex(links []string, regex []string) []string {
 	return results
 }
 
-func isNon200(link string, headers map[string]string, excludedStatusCodes []int, excludedURLRegex []string) bool {
-	// check if the link matches any excluded regex
-	for _, regex := range excludedURLRegex {
-		matches, _ := regexp.MatchString(regex, link)
-		if matches {
-			return false
-		}
+func isValidURL(s string) bool {
+	_, err := url.ParseRequestURI(s)
+	return err == nil
+}
+
+func isNon200(link string) bool {
+	// Golang's native HTTP client can't read URLs in this format: //example.com
+	if strings.HasPrefix(link, "//") {
+		return isNon200("http:" + link)
 	}
 
-	res, err := httpGET(link, headers)
-
-	// check if the link doesn't respond properly
+	res, err := http.Get(link)
+	// If it doesn't respond at all, it could be an unregistered domain
 	if err != nil {
-		return false
+		return true
 	}
 
 	if res.StatusCode == 200 {
 		return false
 	}
 
-	// check if the link responds with an excluded status code
-	for _, code := range excludedStatusCodes {
-		if res.StatusCode == code {
-			return false
-		}
-	}
 	return true
 }
