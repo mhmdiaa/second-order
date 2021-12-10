@@ -14,6 +14,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/gocolly/colly/v2"
 )
@@ -257,21 +258,21 @@ func isValidURL(s string) bool {
 	return err == nil
 }
 
-func isNon200(link string) bool {
+func isNon200(url string) bool {
 	// Golang's native HTTP client can't read URLs in this format: //example.com
-	if strings.HasPrefix(link, "//") {
-		return isNon200("http:" + link)
+	if strings.HasPrefix(url, "//") {
+		return isNon200("http:" + url)
 	}
-
-	res, err := http.Get(link)
+	client := http.Client{
+		Timeout: 5 * time.Second,
+	}
+	res, err := client.Get(url)
 	// If it doesn't respond at all, it could be an unregistered domain
 	if err != nil {
 		return true
 	}
-
 	if res.StatusCode == 200 {
 		return false
 	}
-
 	return true
 }
