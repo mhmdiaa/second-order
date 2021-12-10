@@ -1,0 +1,9 @@
+{
+    "LogQueries": {       
+        "script": "src",
+        "iframe": "src",
+        "svg": "src",
+        "object": "src",
+        "img": "src"
+    }
+}
