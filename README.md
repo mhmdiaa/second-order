@@ -25,6 +25,8 @@ docker pull mhmdiaa/second-order
         Configuration file (default "config.json")
   -depth int
         Depth to crawl (default 1)
+  -header value
+    	Header name and value separated by a colon 'Name: Value' (can be used more than once)
   -insecure
         Accept untrusted SSL/TLS certificates
   -output string
@@ -35,7 +37,6 @@ docker pull mhmdiaa/second-order
 
 ## Configuration File
 **Example configuration files are in [config](/config/)**
-- `Headers`: A map of headers that will be sent with every request.
 - `LogQueries`: A map of tag-attribute queries that will be searched for in crawled pages. For example, `"a": "href"` means log every `href` attribute of every `a` tag.
 - `LogNon200Queries`: A map of tag-attribute queries that will be searched for in crawled pages, and logged only if they contain a valid URL that doesn't return a `200` status code.
 - `LogInline`: A list of tags whose inline content (between the opening and closing tags) will be logged, like `title` and `script`

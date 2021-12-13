@@ -23,7 +23,6 @@ import (
 // Configuration holds all the data passed from the config file
 // the target is specified in a flag so we don't have to edit the configuration file every time we run the tool
 type Configuration struct {
-	Headers          map[string]string
 	LogQueries       map[string]string
 	LogNon200Queries map[string]string
 	LogInline        []string
@@ -46,23 +45,51 @@ var loggedInline = struct {
 }{content: make(map[string]map[string][]string)}
 
 var (
-	target     = flag.String("target", "", "Target URL")
-	configFile = flag.String("config", "", "Configuration file")
-	outdir     = flag.String("output", "output", "Directory to save results in")
-	insecure   = flag.Bool("insecure", false, "Accept untrusted SSL/TLS certificates")
-	depth      = flag.Int("depth", 1, "Depth to crawl")
-	threads    = flag.Int("threads", 10, "Number of threads")
+	target     string
+	configFile string
+	outdir     string
+	insecure   bool
+	depth      int
+	threads    int
+	headers    Headers
 )
 
+type Headers map[string]string
+
+func (h *Headers) String() string {
+	return "my string representation"
+}
+
+func (headers *Headers) Set(h string) error {
+	parts := strings.Split(h, ":")
+	if len(parts) == 2 {
+		name := strings.TrimSpace(parts[0])
+		value := strings.TrimSpace(parts[1])
+		(*headers)[name] = value
+	}
+
+	return nil
+}
+
 func main() {
+
+	flag.StringVar(&target, "target", "", "Target URL")
+	flag.StringVar(&configFile, "config", "", "Configuration file")
+	flag.StringVar(&outdir, "output", "output", "Directory to save results in")
+	flag.BoolVar(&insecure, "insecure", false, "Accept untrusted SSL/TLS certificates")
+	flag.IntVar(&depth, "depth", 1, "Depth to crawl")
+	flag.IntVar(&threads, "threads", 10, "Number of threads")
+	headers = make(Headers)
+	flag.Var(&headers, "header", "Header name and value separated by a colon 'Name: Value' (can be used more than once)")
 	flag.Parse()
-	if *target == "" || *configFile == "" {
+
+	if target == "" || configFile == "" {
 		fmt.Println("[*] You need to specify a target and a config file")
 		flag.PrintDefaults()
 		os.Exit(1)
 	}
 
-	config, err := getConfigFile(*configFile)
+	config, err := getConfigFile(configFile)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -78,7 +105,7 @@ func main() {
 		}
 	}()
 
-	hostname, err := getHostname(*target)
+	hostname, err := getHostname(target)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Target URL is invalid: %v", err)
 		os.Exit(1)
@@ -86,10 +113,10 @@ func main() {
 
 	// Instantiate default collector
 	c := colly.NewCollector(
-		colly.MaxDepth(*depth),
+		colly.MaxDepth(depth),
 		colly.Async(),
 	)
-	c.Limit(&colly.LimitRule{DomainGlob: "*", Parallelism: *threads})
+	c.Limit(&colly.LimitRule{DomainGlob: "*", Parallelism: threads})
 
 	// Allow URLs from the same domain and its subdomains
 	c.URLFilters = []*regexp.Regexp{
@@ -98,14 +125,14 @@ func main() {
 
 	// Add headers
 	c.OnRequest(func(r *colly.Request) {
-		for header, value := range config.Headers {
+		for header, value := range headers {
 			r.Headers.Set(header, value)
 		}
 	})
 
 	// Accept untrusted SSL/TLS certificates based on the value of `-insecure` flag
 	c.WithTransport(&http.Transport{
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: *insecure},
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: insecure},
 	})
 
 	// On every a element which has href attribute call callback
@@ -113,7 +140,7 @@ func main() {
 		link := e.Attr("href")
 		// Print link if it's in-scope and has not been visited
 		visited, _ := c.HasVisited(link)
-		if checkOrigin(link, *target) && !visited {
+		if checkOrigin(link, target) && !visited {
 			fmt.Println(link)
 		}
 
@@ -171,7 +198,7 @@ func main() {
 	}
 
 	// Start scraping
-	c.Visit(*target)
+	c.Visit(target)
 	// Wait until threads are finished
 	c.Wait()
 
@@ -179,7 +206,7 @@ func main() {
 }
 
 func writeAllResults(config Configuration) {
-	os.MkdirAll(*outdir, os.ModePerm)
+	os.MkdirAll(outdir, os.ModePerm)
 
 	if config.LogQueries != nil {
 		err := writeResults("attributes.json", loggedQueries.content)
@@ -236,7 +263,7 @@ func writeResults(filename string, content map[string]map[string][]string) error
 	if err != nil {
 		return fmt.Errorf("could not marshal the JSON object: %v", err)
 	}
-	err = ioutil.WriteFile(filepath.Join(*outdir, filename), JSON, 0644)
+	err = ioutil.WriteFile(filepath.Join(outdir, filename), JSON, 0644)
 	if err != nil {
 		return fmt.Errorf("coudln't write resources to JSON: %v", err)
 	}
@@ -283,14 +310,23 @@ func isValidURL(s string) bool {
 }
 
 func isNotFound(url string) bool {
-	// Golang's native HTTP client can't read URLs in this format: //example.com
+	// Golang's native HTTP client can't read URLs in this format: "//example.com"
 	if strings.HasPrefix(url, "//") {
 		return isNotFound("http:" + url)
 	}
 	client := http.Client{
 		Timeout: 5 * time.Second,
 	}
-	res, err := client.Get(url)
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return false
+	}
+	for name, value := range headers {
+		req.Header.Set(name, value)
+	}
+
+	res, err := client.Do(req)
 	// If it doesn't respond at all, it could be an unregistered domain
 	if err != nil {
 		return true
