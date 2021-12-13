@@ -133,7 +133,7 @@ func main() {
 			_, attr := unpackQuerySelector(querySelector)
 			value := e.Attr(attr)
 
-			if isValidURL(value) && isNon200(value) {
+			if isValidURL(value) && isNotFound(value) {
 				loggedNon200Queries.Lock()
 				if _, ok := loggedNon200Queries.content[u]; !ok {
 					loggedNon200Queries.content[u] = make(map[string][]string)
@@ -256,14 +256,20 @@ func checkOrigin(link, base string) bool {
 }
 
 func isValidURL(s string) bool {
-	_, err := url.ParseRequestURI(s)
-	return err == nil
+	u, err := url.ParseRequestURI(s)
+	if err != nil {
+		return false
+	}
+	if u.IsAbs() {
+		return true
+	}
+	return false
 }
 
-func isNon200(url string) bool {
+func isNotFound(url string) bool {
 	// Golang's native HTTP client can't read URLs in this format: //example.com
 	if strings.HasPrefix(url, "//") {
-		return isNon200("http:" + url)
+		return isNotFound("http:" + url)
 	}
 	client := http.Client{
 		Timeout: 5 * time.Second,
@@ -273,8 +279,8 @@ func isNon200(url string) bool {
 	if err != nil {
 		return true
 	}
-	if res.StatusCode == 200 {
-		return false
+	if res.StatusCode == 404 {
+		return true
 	}
-	return true
+	return false
 }
