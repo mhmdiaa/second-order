@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -65,6 +66,17 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	// Run a goroutine to catch interrupt signals and save the found results before exiting
+	interrupt := make(chan os.Signal, 1)
+	signal.Notify(interrupt, os.Interrupt)
+	go func() {
+		for sig := range interrupt {
+			fmt.Printf("[*] Received a kill signal: %s, saving the results before exiting\n", sig)
+			writeAllResults(config)
+			os.Exit(0)
+		}
+	}()
 
 	hostname, err := getHostname(*target)
 	if err != nil {
@@ -163,22 +175,26 @@ func main() {
 	// Wait until threads are finished
 	c.Wait()
 
+	writeAllResults(config)
+}
+
+func writeAllResults(config Configuration) {
 	os.MkdirAll(*outdir, os.ModePerm)
 
 	if config.LogQueries != nil {
-		err = writeResults("attributes.json", loggedQueries.content)
+		err := writeResults("attributes.json", loggedQueries.content)
 		if err != nil {
 			log.Printf("Error writing attributes: %v", err)
 		}
 	}
 	if config.LogInline != nil {
-		err = writeResults("inline.json", loggedInline.content)
+		err := writeResults("inline.json", loggedInline.content)
 		if err != nil {
 			log.Printf("Error writing inline text: %v", err)
 		}
 	}
 	if config.LogNon200Queries != nil {
-		err = writeResults("non-200-url-attributes.json", loggedNon200Queries.content)
+		err := writeResults("non-200-url-attributes.json", loggedNon200Queries.content)
 		if err != nil {
 			log.Printf("Error writing non-200 URL attributes: %v", err)
 		}
