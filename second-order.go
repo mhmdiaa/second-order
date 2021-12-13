@@ -111,9 +111,9 @@ func main() {
 	// On every a element which has href attribute call callback
 	c.OnHTML("a[href]", func(e *colly.HTMLElement) {
 		link := e.Attr("href")
-
-		// Print link if it's in-scope
-		if checkOrigin(link, *target) {
+		// Print link if it's in-scope and has not been visited
+		visited, _ := c.HasVisited(link)
+		if checkOrigin(link, *target) && !visited {
 			fmt.Println(link)
 		}
 
