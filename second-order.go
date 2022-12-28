@@ -215,19 +215,19 @@ func writeAllResults(config Configuration) {
 	os.MkdirAll(outdir, os.ModePerm)
 
 	if config.LogQueries != nil {
-		err := writeResults("attributes.json", loggedQueries.content)
+		err := writeResults("attributes.json", loggedQueries.content, "LogQueries")
 		if err != nil {
 			log.Printf("Error writing attributes: %v", err)
 		}
 	}
 	if config.LogInline != nil {
-		err := writeResults("inline.json", loggedInline.content)
+		err := writeResults("inline.json", loggedInline.content, "LogInline")
 		if err != nil {
 			log.Printf("Error writing inline text: %v", err)
 		}
 	}
 	if config.LogNon200Queries != nil {
-		err := writeResults("non-200-url-attributes.json", loggedNon200Queries.content)
+		err := writeResults("non-200-url-attributes.json", loggedNon200Queries.content, "LogNon200Queries")
 		if err != nil {
 			log.Printf("Error writing non-200 URL attributes: %v", err)
 		}
@@ -264,8 +264,10 @@ func unpackQuerySelector(q string) (string, string) {
 	return tag, attribute
 }
 
-func writeResults(filename string, content map[string]map[string][]string) error {
-	JSON, err := json.Marshal(content)
+func writeResults(filename string, content map[string]map[string][]string, resultType string) error {
+	output := make(map[string]map[string]map[string][]string)
+	output[resultType] = content
+	JSON, err := json.Marshal(output)
 	if err != nil {
 		return fmt.Errorf("could not marshal the JSON object: %v", err)
 	}
